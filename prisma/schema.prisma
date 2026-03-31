@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ADMIN ──────────────────────────────────────────────────────────────────
+
+model Admin {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  passwordHash   String    @map("password_hash")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  candidates           Candidate[]
+  apiKeys              ApiKey[]
+  notificationSchedule NotificationSchedule?
+
+  @@map("admins")
+}
+
+// ─── NOTIFICATION SCHEDULE (admin-configurable cron settings) ───────────────
+
+model NotificationSchedule {
+  id                     String   @id @default(cuid())
+  enabled                Boolean  @default(true)
+  requestDays            Int[]    @default([0]) @map("request_days")          // 0=Sun, 1=Mon, ..., 6=Sat
+  requestHour            Int      @default(8) @map("request_hour")            // 0-23
+  requestMinute          Int      @default(0) @map("request_minute")          // 0-59
+  reminderIntervalHours  Int      @default(3) @map("reminder_interval_hours") // 1-12
+  reminderStartHour      Int      @default(11) @map("reminder_start_hour")    // 0-23
+  reminderEndHour        Int      @default(23) @map("reminder_end_hour")      // 0-23
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  adminId                String   @unique @map("admin_id")
+  admin                  Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("notification_schedules")
+}
+
+// ─── CANDIDATE ──────────────────────────────────────────────────────────────
+
+model Candidate {
+  id             String            @id @default(cuid())
+  email          String
+  phone          String    @default("")
+  name           String?
+  status         CandidateStatus   @default(ACTIVE)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  adminId        String            @map("admin_id")
+  admin          Admin             @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  availabilityWindows AvailabilityWindow[]
+  notificationLogs    NotificationLog[]
+
+  @@unique([email, adminId])
+  @@index([adminId])
+  @@map("candidates")
+}
+
+enum CandidateStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+// ─── AVAILABILITY WINDOW (2-week rolling period) ────────────────────────────
+
+model AvailabilityWindow {
+  id             String              @id @default(cuid())
+  weekStart      DateTime            @map("week_start")
+  weekEnd        DateTime            @map("week_end")
+  status         WindowStatus        @default(OPEN)
+  token          String              @unique
+  tokenExpiresAt DateTime            @map("token_expires_at")
+  submittedAt    DateTime?           @map("submitted_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  candidateId    String              @map("candidate_id")
+  candidate      Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  timeSlots      TimeSlot[]
+
+  @@unique([candidateId, weekStart])
+  @@index([candidateId])
+  @@index([token])
+  @@index([status])
+  @@map("availability_windows")
+}
+
+enum WindowStatus {
+  OPEN
+  SUBMITTED
+  EXPIRED
+}
+
+// ─── TIME SLOT ──────────────────────────────────────────────────────────────
+
+model TimeSlot {
+  id             String            @id @default(cuid())
+  date           DateTime          @db.Date
+  startTime      DateTime          @map("start_time")
+  endTime        DateTime          @map("end_time")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  windowId       String            @map("window_id")
+  window         AvailabilityWindow @relation(fields: [windowId], references: [id], onDelete: Cascade)
+
+  @@index([windowId])
+  @@index([date])
+  @@map("time_slots")
+}
+
+// ─── API KEY ────────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  name           String
+  keyHash        String    @unique @map("key_hash")
+  keyPrefix      String    @map("key_prefix")
+  scopes         String[]  @default(["read:availability"])
+  lastUsedAt     DateTime? @map("last_used_at")
+  expiresAt      DateTime? @map("expires_at")
+  revoked        Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  adminId        String    @map("admin_id")
+  admin          Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([keyHash])
+  @@index([adminId])
+  @@map("api_keys")
+}
+
+// ─── NOTIFICATION LOG ───────────────────────────────────────────────────────
+
+model NotificationLog {
+  id             String              @id @default(cuid())
+  type           NotificationType
+  channel        NotificationChannel
+  status         NotificationStatus  @default(PENDING)
+  errorMessage   String?             @map("error_message")
+  sentAt         DateTime?           @map("sent_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  candidateId    String              @map("candidate_id")
+  candidate      Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@index([type, status])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
+
+enum NotificationType {
+  AVAILABILITY_REQUEST
+  REMINDER
+  WINDOW_OPENED
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
