@@ -187,6 +187,39 @@ export async function POST(
     }
   }
 
+  // Validate all weekdays in the window have slots (min 4h each)
+  const windowDays = eachDayOfInterval({
+    start: window.weekStart,
+    end: window.weekEnd,
+  }).filter((d) => {
+    const day = d.getDay();
+    return day >= 1 && day <= 5; // Mon–Fri only
+  });
+
+  const missingDays = windowDays.filter((d) => {
+    const dateStr = format(d, "yyyy-MM-dd");
+    const daySlots = slotsByDate.get(dateStr);
+    if (!daySlots) return true;
+    let totalMinutes = 0;
+    for (const s of daySlots) {
+      const startMin = parseInt(s.start.split(":")[0]) * 60 + parseInt(s.start.split(":")[1]);
+      const endMin = parseInt(s.end.split(":")[0]) * 60 + parseInt(s.end.split(":")[1]);
+      totalMinutes += endMin - startMin;
+    }
+    return totalMinutes < 240;
+  });
+
+  if (missingDays.length > 0) {
+    const missing = missingDays.map((d) => format(d, "EEE, MMM d")).join(", ");
+    return NextResponse.json(
+      {
+        success: false,
+        error: `All weekdays require at least 4 hours of availability. Missing: ${missing}`,
+      },
+      { status: 400 }
+    );
+  }
+
   // Delete existing slots and save new ones
   await prisma.timeSlot.deleteMany({ where: { windowId: window.id } });
 
@@ -254,6 +287,31 @@ export async function PUT(
   if (window.timeSlots.length === 0) {
     return NextResponse.json(
       { success: false, error: "No time slots to submit. Please add availability first." },
+      { status: 400 }
+    );
+  }
+
+  // Validate all weekdays are covered
+  const submitWindowDays = eachDayOfInterval({
+    start: window.weekStart,
+    end: window.weekEnd,
+  }).filter((d) => {
+    const day = d.getDay();
+    return day >= 1 && day <= 5;
+  });
+
+  const coveredDates = new Set(
+    window.timeSlots.map((s) => format(s.date, "yyyy-MM-dd"))
+  );
+
+  const uncoveredDays = submitWindowDays.filter(
+    (d) => !coveredDates.has(format(d, "yyyy-MM-dd"))
+  );
+
+  if (uncoveredDays.length > 0) {
+    const missing = uncoveredDays.map((d) => format(d, "EEE, MMM d")).join(", ");
+    return NextResponse.json(
+      { success: false, error: `All weekdays must have availability. Missing: ${missing}` },
       { status: 400 }
     );
   }

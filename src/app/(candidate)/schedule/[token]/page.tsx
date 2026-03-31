@@ -211,8 +211,10 @@ export default function SchedulePage({
 
   // ─── Week helpers ─────────────────────────────────────────────────────
 
-  const week1Days = data?.days.slice(0, 7) || [];
-  const week2Days = data?.days.slice(7, 14) || [];
+  // Days are already weekdays-only from the API (Mon–Fri)
+  const allWeekdays = data?.days || [];
+  const week1Days = allWeekdays.slice(0, 5);
+  const week2Days = allWeekdays.slice(5, 10);
   const currentWeekDays = activeWeek === 0 ? week1Days : week2Days;
 
   // ─── Drag handlers ────────────────────────────────────────────────────
@@ -447,10 +449,12 @@ export default function SchedulePage({
 
   // ─── Stats ────────────────────────────────────────────────────────────
 
-  const allDays = data?.days || [];
-  const daysWithSlots = allDays.filter((d) => totalHoursFromCells(cells, d.date) > 0).length;
-  const daysValid = allDays.filter((d) => totalHoursFromCells(cells, d.date) >= 4).length;
+  const totalWeekdays = allWeekdays.length;
+  const daysWithSlots = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) > 0).length;
+  const daysValid = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) >= 4).length;
   const totalSelectedHours = (cells.size * BLOCK_MINUTES) / 60;
+  const allDaysComplete = daysValid === totalWeekdays && totalWeekdays > 0;
+  const missingDays = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) < 4);
 
   // ─── Main render ──────────────────────────────────────────────────────
 
@@ -483,7 +487,7 @@ export default function SchedulePage({
           <p className="text-muted text-sm mt-1">
             {step === "review"
               ? "Review your time slots below and confirm."
-              : "Click and drag on the calendar to mark your available times. Minimum 4 hours per day."}
+              : "Click and drag on the calendar to mark your available times. All weekdays (Mon–Fri) require a minimum of 4 hours."}
           </p>
         </div>
 
@@ -717,30 +721,51 @@ export default function SchedulePage({
                   {totalSelectedHours}h total
                 </span>
                 <span className="text-border">|</span>
-                <span className="text-muted">
-                  {daysWithSlots} day{daysWithSlots !== 1 ? "s" : ""}
-                </span>
-                <span className="text-border">|</span>
                 <span
                   className={
-                    daysValid > 0 && daysValid === daysWithSlots
+                    allDaysComplete
                       ? "text-success font-medium"
                       : "text-muted"
                   }
                 >
-                  {daysValid} valid ({"\u2265"}4h)
+                  {daysValid}/{totalWeekdays} days complete
                 </span>
               </div>
             </div>
 
-            {/* Save */}
-            {cells.size > 0 && (
-              <div className="flex justify-end pt-2">
-                <Button onClick={handleSave} loading={saving} size="lg">
-                  Save &amp; Review
-                </Button>
+            {/* Completion status */}
+            {cells.size > 0 && !allDaysComplete && (
+              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl px-4 py-3">
+                <div className="flex items-start gap-2.5">
+                  <svg className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                      {missingDays.length} day{missingDays.length !== 1 ? "s" : ""} still need availability (min 4h each)
+                    </p>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-1">
+                      {missingDays.map((d) => {
+                        const dt = new Date(d.date + "T12:00:00");
+                        return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+                      }).join(", ")}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
+
+            {/* Save */}
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={handleSave}
+                loading={saving}
+                size="lg"
+                disabled={!allDaysComplete}
+              >
+                Save &amp; Review
+              </Button>
+            </div>
           </div>
         )}
 
@@ -763,7 +788,7 @@ export default function SchedulePage({
             </Card>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {allDays
+              {allWeekdays
                 .filter((day) =>
                   slots.some((s) => s.date === day.date)
                 )
