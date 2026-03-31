@@ -15,13 +15,16 @@ A complete guide to using the SlotMatch API to query candidate availability prog
    - [Get Availability by Email](#get-availability-by-email)
    - [Get Availability by Candidate ID](#get-availability-by-candidate-id)
 6. [Response Format](#response-format)
-7. [Error Handling](#error-handling)
-8. [Managing API Keys](#managing-api-keys)
-9. [Integration Examples](#integration-examples)
-   - [cURL](#curl)
-   - [JavaScript / Node.js](#javascript--nodejs)
-   - [Python](#python)
-10. [Security Best Practices](#security-best-practices)
+7. [Timezones & Availability Windows](#timezones--availability-windows)
+8. [Rate Limiting & CORS](#rate-limiting--cors)
+9. [Error Handling](#error-handling)
+10. [Managing API Keys](#managing-api-keys)
+11. [Integration Examples](#integration-examples)
+    - [cURL](#curl)
+    - [JavaScript / Node.js](#javascript--nodejs)
+    - [Python](#python)
+12. [Finding Overlapping Slots](#finding-overlapping-slots)
+13. [Security Best Practices](#security-best-practices)
 
 ---
 
@@ -292,6 +295,45 @@ All API responses follow a consistent structure:
 
 ---
 
+## Timezones & Availability Windows
+
+### Timezone
+
+All `startTime` and `endTime` values in time slots are in the **server's local timezone**. The `windowStart` and `windowEnd` fields are ISO 8601 UTC timestamps. When scheduling interviews, convert slot times to the appropriate timezone for your use case.
+
+### Availability Window Lifecycle
+
+Each availability window goes through the following states:
+
+| Status | Description |
+|--------|-------------|
+| `OPEN` | Window is created when a candidate is added or a new cycle starts. Candidate has not yet submitted. |
+| `SUBMITTED` | Candidate has submitted their availability. This is the data returned by the API. |
+| `EXPIRED` | Window period has passed without a submission. No data available for this cycle. |
+
+**Key points:**
+
+- Windows follow a **2-week rolling cycle** (Monday to Sunday of the following week)
+- The API always returns only the **latest submitted** window for each candidate
+- A new window is created automatically at the start of each cycle
+- Candidates must fill all weekdays (Mon–Fri) with a minimum of 4 hours per day
+
+---
+
+## Rate Limiting & CORS
+
+### Rate Limits
+
+There are currently **no rate limits** on the API. However, availability data only changes when candidates submit (typically once per 2-week cycle), so frequent polling is unnecessary.
+
+**Recommended polling interval:** Every 5–15 minutes at most.
+
+### CORS
+
+> **Important:** The API does **not** set CORS headers. It is a **server-to-server API** and cannot be called directly from browser-based JavaScript. Always make API calls from your backend server.
+
+---
+
 ## Error Handling
 
 | HTTP Status | Error Message | Meaning |
@@ -445,6 +487,95 @@ for c in candidates:
             print(f"    {slot['date']} {slot['startTime']}-{slot['endTime']}")
     else:
         print(f"  {c['name']}: No availability yet")
+```
+
+---
+
+## Finding Overlapping Slots
+
+The most common use case is finding times when multiple candidates are all available for an interview. Here's how to compute overlapping availability:
+
+```javascript
+// Find time slots where ALL specified candidates are available
+async function findOverlappingSlots(candidateEmails) {
+  const API_URL = "https://your-app.up.railway.app";
+  const API_KEY = "sm_your_api_key_here";
+
+  // Fetch availability for all candidates
+  const results = await Promise.all(
+    candidateEmails.map(async (email) => {
+      const res = await fetch(
+        `${API_URL}/api/external/availability?email=${encodeURIComponent(email)}`,
+        { headers: { Authorization: `Bearer ${API_KEY}` } }
+      );
+      const data = await res.json();
+      return data.data[0];
+    })
+  );
+
+  // Filter to candidates who have submitted
+  const withAvailability = results.filter((r) => r?.availability);
+  if (withAvailability.length !== candidateEmails.length) {
+    console.log("Not all candidates have submitted availability yet.");
+    return [];
+  }
+
+  // Build a map of date -> array of slots per candidate
+  const dateMap = new Map();
+  for (const candidate of withAvailability) {
+    for (const slot of candidate.availability.slots) {
+      if (!dateMap.has(slot.date)) dateMap.set(slot.date, []);
+      dateMap.get(slot.date).push({
+        candidate: candidate.email,
+        start: slot.startTime,
+        end: slot.endTime,
+      });
+    }
+  }
+
+  // Find dates where all candidates have overlapping time
+  const overlaps = [];
+  for (const [date, slots] of dateMap) {
+    // Group by candidate
+    const byCand = {};
+    for (const s of slots) {
+      if (!byCand[s.candidate]) byCand[s.candidate] = [];
+      byCand[s.candidate].push(s);
+    }
+
+    // All candidates must have slots on this date
+    if (Object.keys(byCand).length < candidateEmails.length) continue;
+
+    // Check each 30-min block
+    for (let h = 9; h < 17; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const blockStart = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        const blockEnd =
+          m === 30
+            ? `${String(h + 1).padStart(2, "0")}:00`
+            : `${String(h).padStart(2, "0")}:30`;
+
+        const allAvailable = candidateEmails.every((email) =>
+          byCand[email]?.some((s) => s.start <= blockStart && s.end >= blockEnd)
+        );
+
+        if (allAvailable) {
+          overlaps.push({ date, time: blockStart });
+        }
+      }
+    }
+  }
+
+  return overlaps;
+}
+
+// Usage
+const slots = await findOverlappingSlots([
+  "jane@example.com",
+  "john@example.com",
+]);
+console.log("Common availability:", slots);
+// Output: [{ date: "2026-04-01", time: "10:00" }, { date: "2026-04-01", time: "10:30" }, ...]
 ```
 
 ---

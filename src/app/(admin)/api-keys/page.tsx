@@ -403,7 +403,167 @@ curl -s "${origin}/api/external/availability?email=jane@example.com" \\
           </div>
         </Section>
 
-        {/* Section 7: Security */}
+        {/* Section 7: Timezone & Window Lifecycle */}
+        <Section
+          title="Timezones & Availability Windows"
+          icon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Timezone</p>
+              <p className="text-sm text-muted">
+                All <code className="bg-surface px-1 py-0.5 rounded font-mono text-[11px]">startTime</code> and <code className="bg-surface px-1 py-0.5 rounded font-mono text-[11px]">endTime</code> values are in the <span className="text-foreground font-medium">server&apos;s local timezone</span>. The <code className="bg-surface px-1 py-0.5 rounded font-mono text-[11px]">windowStart</code> and <code className="bg-surface px-1 py-0.5 rounded font-mono text-[11px]">windowEnd</code> fields are ISO 8601 UTC timestamps. When scheduling interviews, convert slot times to the appropriate timezone for your use case.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Availability window lifecycle</p>
+              <div className="bg-surface dark:bg-white/[0.03] rounded-xl p-4 border border-border/60 dark:border-white/[0.06] space-y-3">
+                <div className="flex items-start gap-3">
+                  <Badge variant="warning">OPEN</Badge>
+                  <p className="text-xs text-muted">Window is created when a candidate is added or a new cycle starts. Candidate has not yet submitted.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Badge variant="success">SUBMITTED</Badge>
+                  <p className="text-xs text-muted">Candidate has submitted their availability. This is the data returned by the API.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Badge variant="default">EXPIRED</Badge>
+                  <p className="text-xs text-muted">Window period has passed without a submission. No data available for this cycle.</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted mt-3">
+                Windows follow a <span className="text-foreground font-medium">2-week rolling cycle</span> (Monday to Sunday of the following week). The API always returns only the <span className="text-foreground font-medium">latest submitted</span> window. A new window is created automatically at the start of each cycle.
+              </p>
+            </div>
+          </div>
+        </Section>
+
+        {/* Section 8: Rate Limiting */}
+        <Section
+          title="Rate Limiting & CORS"
+          icon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Rate limits</p>
+              <p className="text-sm text-muted">
+                There are currently <span className="text-foreground font-medium">no rate limits</span> on the API. However, availability data only changes when candidates submit (typically once per 2-week cycle), so frequent polling is unnecessary. A reasonable polling interval is <span className="text-foreground font-medium">every 5–15 minutes</span> at most.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">CORS</p>
+              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-4 py-3">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  <span className="font-semibold">Server-to-server only.</span> The API does not set CORS headers, so it cannot be called directly from browser-based JavaScript. Always make API calls from your backend server, never from client-side code.
+                </p>
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* Section 9: Finding Overlapping Slots */}
+        <Section
+          title="Practical Example: Finding Overlapping Slots"
+          icon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              The most common use case is finding times when multiple candidates are all available. Here&apos;s how to compute overlapping slots:
+            </p>
+            <CodeBlock language="javascript">{`// Find time slots where ALL specified candidates are available
+async function findOverlappingSlots(candidateEmails) {
+  const API_URL = "${origin}";
+  const API_KEY = "sm_your_api_key_here";
+
+  // Fetch availability for all candidates
+  const results = await Promise.all(
+    candidateEmails.map(async (email) => {
+      const res = await fetch(
+        \`\${API_URL}/api/external/availability?email=\${encodeURIComponent(email)}\`,
+        { headers: { Authorization: \`Bearer \${API_KEY}\` } }
+      );
+      const data = await res.json();
+      return data.data[0];
+    })
+  );
+
+  // Filter to candidates who have submitted
+  const withAvailability = results.filter((r) => r?.availability);
+  if (withAvailability.length !== candidateEmails.length) {
+    console.log("Not all candidates have submitted availability yet.");
+    return [];
+  }
+
+  // Build a map of date -> array of slot arrays (one per candidate)
+  const dateMap = new Map();
+  for (const candidate of withAvailability) {
+    for (const slot of candidate.availability.slots) {
+      if (!dateMap.has(slot.date)) dateMap.set(slot.date, []);
+      dateMap.get(slot.date).push({
+        candidate: candidate.email,
+        start: slot.startTime,
+        end: slot.endTime,
+      });
+    }
+  }
+
+  // Find dates where all candidates have overlapping time
+  const overlaps = [];
+  for (const [date, slots] of dateMap) {
+    // Group by candidate
+    const byCand = {};
+    for (const s of slots) {
+      if (!byCand[s.candidate]) byCand[s.candidate] = [];
+      byCand[s.candidate].push(s);
+    }
+
+    // All candidates must have slots on this date
+    if (Object.keys(byCand).length < candidateEmails.length) continue;
+
+    // Find intersection of time ranges (simplified: check 30-min blocks)
+    for (let h = 9; h < 17; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const blockStart = \`\${String(h).padStart(2,"0")}:\${String(m).padStart(2,"0")}\`;
+        const blockEnd = m === 30
+          ? \`\${String(h + 1).padStart(2,"0")}:00\`
+          : \`\${String(h).padStart(2,"0")}:30\`;
+
+        const allAvailable = candidateEmails.every((email) =>
+          byCand[email]?.some((s) => s.start <= blockStart && s.end >= blockEnd)
+        );
+
+        if (allAvailable) {
+          overlaps.push({ date, time: blockStart });
+        }
+      }
+    }
+  }
+
+  return overlaps;
+}
+
+// Usage
+const slots = await findOverlappingSlots([
+  "jane@example.com",
+  "john@example.com",
+]);
+console.log("Common availability:", slots);`}</CodeBlock>
+          </div>
+        </Section>
+
+        {/* Section 10: Security */}
         <Section
           title="Security Best Practices"
           icon={
