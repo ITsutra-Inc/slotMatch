@@ -11,12 +11,6 @@ export const loginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-export const registerSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  name: z.string().min(1, "Name is required"),
-});
-
 export const timeSlotSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, "Start time must be HH:MM"),
@@ -35,7 +29,6 @@ export const createApiKeySchema = z.object({
 
 export type CreateCandidateInput = z.infer<typeof createCandidateSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
-export type RegisterInput = z.infer<typeof registerSchema>;
 export type TimeSlotInput = z.infer<typeof timeSlotSchema>;
 export type SubmitAvailabilityInput = z.infer<typeof submitAvailabilitySchema>;
 export const updateScheduleSchema = z.object({

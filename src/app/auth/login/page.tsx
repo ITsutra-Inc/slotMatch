@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 
@@ -86,13 +85,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-sm text-muted mt-6">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/auth/register"
-            className="text-primary hover:text-primary-hover font-medium"
-          >
-            Register
-          </Link>
+          SlotMatch Admin Portal
         </p>
       </div>
     </div>
