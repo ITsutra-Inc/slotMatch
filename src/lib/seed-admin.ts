@@ -22,6 +22,14 @@ export async function ensureAdminExists() {
       });
       console.log(`Admin user created: ${ADMIN_EMAIL}`);
     }
+
+    // Remove any non-predefined admin accounts
+    const deleted = await prisma.admin.deleteMany({
+      where: { email: { not: ADMIN_EMAIL } },
+    });
+    if (deleted.count > 0) {
+      console.log(`Removed ${deleted.count} non-predefined admin account(s)`);
+    }
   } catch (error) {
     console.error("Failed to seed admin user:", error);
   }
