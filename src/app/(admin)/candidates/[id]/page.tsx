@@ -65,8 +65,8 @@ export default function CandidateDetailPage({
     load();
   }, [id]);
 
-  const [resetting, setResetting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [actionWindowId, setActionWindowId] = useState<string | null>(null);
+  const [actionType, setActionType] = useState<"reset" | "delete" | "deleteWindow" | null>(null);
   const [sendingRequest, setSendingRequest] = useState(false);
   const [sendRequestMsg, setSendRequestMsg] = useState("");
   const [copyingLink, setCopyingLink] = useState(false);
@@ -153,9 +153,10 @@ export default function CandidateDetailPage({
     }
   }
 
-  async function handleDeleteAvailability() {
-    if (!confirm("Delete this candidate's submitted availability? Their time slots will be cleared and the window reopened.")) return;
-    setDeleting(true);
+  async function handleClearSlots(windowId: string) {
+    if (!confirm("Delete submitted availability for this window? Time slots will be cleared and the window reopened.")) return;
+    setActionWindowId(windowId);
+    setActionType("delete");
     try {
       const res = await fetch(`/api/candidates/${id}/clear-availability`, { method: "POST" });
       const json = await res.json();
@@ -167,7 +168,48 @@ export default function CandidateDetailPage({
     } catch (error) {
       console.error("Failed to delete availability:", error);
     } finally {
-      setDeleting(false);
+      setActionWindowId(null);
+      setActionType(null);
+    }
+  }
+
+  async function handleDeleteWindow(windowId: string) {
+    if (!confirm("Permanently delete this entire availability window and all its data? This cannot be undone.")) return;
+    setActionWindowId(windowId);
+    setActionType("deleteWindow");
+    try {
+      const res = await fetch(`/api/candidates/${id}/windows/${windowId}`, { method: "DELETE" });
+      const json = await res.json();
+      if (json.success) {
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      }
+    } catch (error) {
+      console.error("Failed to delete window:", error);
+    } finally {
+      setActionWindowId(null);
+      setActionType(null);
+    }
+  }
+
+  async function handleResetWindow(windowId: string) {
+    if (!confirm("Reset this submission? Time slots will be deleted and a new request sent.")) return;
+    setActionWindowId(windowId);
+    setActionType("reset");
+    try {
+      const res = await fetch(`/api/candidates/${id}/reset-submission`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      }
+    } catch (error) {
+      console.error("Failed to reset submission:", error);
+    } finally {
+      setActionWindowId(null);
+      setActionType(null);
     }
   }
 
@@ -180,24 +222,6 @@ export default function CandidateDetailPage({
     const json = await res.json();
     if (json.success) {
       setCandidate((prev) => (prev ? { ...prev, status } : prev));
-    }
-  }
-
-  async function handleResetSubmission() {
-    if (!confirm("Reset this candidate's submission? Their time slots will be deleted and a new availability request will be sent.")) return;
-    setResetting(true);
-    try {
-      const res = await fetch(`/api/candidates/${id}/reset-submission`, { method: "POST" });
-      const json = await res.json();
-      if (json.success) {
-        const reload = await fetch(`/api/candidates/${id}`);
-        const data = await reload.json();
-        if (data.success) setCandidate(data.data);
-      }
-    } catch (error) {
-      console.error("Failed to reset submission:", error);
-    } finally {
-      setResetting(false);
     }
   }
 
@@ -220,17 +244,17 @@ export default function CandidateDetailPage({
     );
   }
 
-  const currentWindow = candidate.availabilityWindows[0];
+  const windows = candidate.availabilityWindows;
 
-  // Group time slots by date
-  const slotsByDate = new Map<string, typeof currentWindow.timeSlots>();
-  if (currentWindow) {
-    for (const slot of currentWindow.timeSlots) {
+  function groupSlotsByDate(timeSlots: typeof windows[0]["timeSlots"]) {
+    const map = new Map<string, typeof timeSlots>();
+    for (const slot of timeSlots) {
       const dateKey = slot.date.split("T")[0];
-      const existing = slotsByDate.get(dateKey) || [];
+      const existing = map.get(dateKey) || [];
       existing.push(slot);
-      slotsByDate.set(dateKey, existing);
+      map.set(dateKey, existing);
     }
+    return map;
   }
 
   return (
@@ -426,106 +450,129 @@ export default function CandidateDetailPage({
         </div>
       </Card>
 
-      {/* Current availability window */}
-      <Card>
-        <div className="flex items-center gap-2 mb-4">
-          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <CardTitle>Current Availability Window</CardTitle>
-        </div>
+      {/* Availability Windows */}
+      <div className="flex items-center gap-2">
+        <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <h2 className="text-lg font-semibold text-foreground">Availability Windows</h2>
+        <span className="text-xs text-muted">({windows.length})</span>
+      </div>
 
-        {currentWindow ? (
-          <div>
-            <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-border/40">
-              <p className="text-sm font-medium text-foreground">
-                {formatTimestampTz(currentWindow.weekStart, "MMM d")} –{" "}
-                {formatTimestampTz(currentWindow.weekEnd, "MMM d, yyyy")}
-              </p>
-              <Badge
-                dot
-                variant={
-                  currentWindow.status === "SUBMITTED"
-                    ? "success"
-                    : currentWindow.status === "OPEN"
-                      ? "warning"
-                      : "default"
-                }
-              >
-                {currentWindow.status}
-              </Badge>
-              {currentWindow.submittedAt && (
-                <p className="text-xs text-muted">
-                  Submitted{" "}
-                  {formatTimestampTz(currentWindow.submittedAt, "MMM d 'at' h:mm a")}
-                </p>
-              )}
-              {(currentWindow.status === "SUBMITTED" || currentWindow.status === "EXPIRED") && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleResetSubmission}
-                  loading={resetting}
-                >
-                  Reset &amp; Resend
-                </Button>
-              )}
-              {currentWindow.timeSlots.length > 0 && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={handleDeleteAvailability}
-                  loading={deleting}
-                >
-                  Delete Availability
-                </Button>
-              )}
-            </div>
+      {windows.length > 0 ? (
+        <div className="space-y-4">
+          {windows.map((win, idx) => {
+            const slotsByDate = groupSlotsByDate(win.timeSlots);
+            const isLoading = actionWindowId === win.id;
 
-            {currentWindow.timeSlots.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {Array.from(slotsByDate.entries()).map(([date, slots]) => (
-                  <div
-                    key={date}
-                    className="bg-surface dark:bg-white/[0.03] rounded-xl p-4 border border-border/60 dark:border-white/[0.06]"
+            return (
+              <Card key={win.id}>
+                <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-border/40">
+                  <p className="text-sm font-medium text-foreground">
+                    {formatTimestampTz(win.weekStart, "MMM d")} –{" "}
+                    {formatTimestampTz(win.weekEnd, "MMM d, yyyy")}
+                  </p>
+                  <Badge
+                    dot
+                    variant={
+                      win.status === "SUBMITTED"
+                        ? "success"
+                        : win.status === "OPEN"
+                          ? "warning"
+                          : "default"
+                    }
                   >
-                    <p className="text-sm font-semibold text-foreground mb-2.5">
-                      {formatDateTz(date, "EEEE, MMM d")}
+                    {win.status}
+                  </Badge>
+                  {idx === 0 && (
+                    <Badge variant="info">Latest</Badge>
+                  )}
+                  {win.submittedAt && (
+                    <p className="text-xs text-muted">
+                      Submitted{" "}
+                      {formatTimestampTz(win.submittedAt, "MMM d 'at' h:mm a")}
                     </p>
-                    <div className="space-y-1.5">
-                      {slots.map((slot) => (
-                        <div key={slot.id} className="flex items-center gap-2">
-                          <span className="w-1 h-1 rounded-full bg-primary" />
-                          <p className="text-xs text-muted">
-                            {formatTimestampTz(slot.startTime, "h:mm a")} –{" "}
-                            {formatTimestampTz(slot.endTime, "h:mm a")}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
+                  )}
+                  <div className="flex gap-2 ml-auto">
+                    {idx === 0 && (win.status === "SUBMITTED" || win.status === "EXPIRED") && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleResetWindow(win.id)}
+                        loading={isLoading && actionType === "reset"}
+                      >
+                        Reset &amp; Resend
+                      </Button>
+                    )}
+                    {win.timeSlots.length > 0 && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleClearSlots(win.id)}
+                        loading={isLoading && actionType === "delete"}
+                      >
+                        Clear Slots
+                      </Button>
+                    )}
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => handleDeleteWindow(win.id)}
+                      loading={isLoading && actionType === "deleteWindow"}
+                    >
+                      Delete Window
+                    </Button>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <svg className="w-8 h-8 text-muted/40 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-muted">
-                  No time slots submitted yet.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
+                </div>
+
+                {win.timeSlots.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {Array.from(slotsByDate.entries()).map(([date, slots]) => (
+                      <div
+                        key={date}
+                        className="bg-surface dark:bg-white/[0.03] rounded-xl p-4 border border-border/60 dark:border-white/[0.06]"
+                      >
+                        <p className="text-sm font-semibold text-foreground mb-2.5">
+                          {formatDateTz(date, "EEEE, MMM d")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {slots.map((slot) => (
+                            <div key={slot.id} className="flex items-center gap-2">
+                              <span className="w-1 h-1 rounded-full bg-primary" />
+                              <p className="text-xs text-muted">
+                                {formatTimestampTz(slot.startTime, "h:mm a")} –{" "}
+                                {formatTimestampTz(slot.endTime, "h:mm a")}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <svg className="w-8 h-8 text-muted/40 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm text-muted">
+                      No time slots submitted yet.
+                    </p>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
           <div className="text-center py-6">
             <svg className="w-8 h-8 text-muted/40 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-sm text-muted">No availability window created yet.</p>
+            <p className="text-sm text-muted">No availability windows created yet.</p>
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {/* Notification log */}
       <Card padding={false}>
