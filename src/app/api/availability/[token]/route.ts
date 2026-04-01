@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateToken } from "@/lib/tokens";
 import { submitAvailabilitySchema } from "@/lib/validations";
-import { isDateInCurrentWindow, getCurrentWindowBounds } from "@/lib/windows";
 import {
   parseISO,
   differenceInMinutes,
@@ -122,8 +121,9 @@ export async function POST(
 
   const { slots } = parsed.data;
 
-  // Validate each slot
-  const { weekStart, weekEnd } = getCurrentWindowBounds();
+  // Validate each slot against the window's own bounds
+  const weekStart = window.weekStart;
+  const weekEnd = window.weekEnd;
 
   // Group slots by date to validate 4-hour minimum
   const slotsByDate = new Map<string, { start: string; end: string }[]>();
@@ -300,8 +300,11 @@ export async function PUT(
     return day >= 1 && day <= 5;
   });
 
+  // Use toISOString to get UTC date string — @db.Date fields are stored at
+  // UTC midnight, and date-fns format() would shift them back a day in
+  // negative-UTC-offset timezones.
   const coveredDates = new Set(
-    window.timeSlots.map((s) => format(s.date, "yyyy-MM-dd"))
+    window.timeSlots.map((s) => s.date.toISOString().split("T")[0])
   );
 
   const uncoveredDays = submitWindowDays.filter(

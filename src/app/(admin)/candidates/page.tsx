@@ -7,6 +7,7 @@ import Input from "@/components/ui/input";
 import Badge from "@/components/ui/badge";
 import Card from "@/components/ui/card";
 import Modal from "@/components/ui/modal";
+import { formatTimestampTz } from "@/lib/timezone";
 
 interface Candidate {
   id: string;
@@ -38,6 +39,8 @@ export default function CandidatesPage() {
   const [newName, setNewName] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
+  const [actionMsg, setActionMsg] = useState<{ id: string; text: string; error?: boolean } | null>(null);
+  const [actionLoading, setActionLoading] = useState<{ id: string; type: string } | null>(null);
 
   const loadCandidates = useCallback(async () => {
     setLoading(true);
@@ -99,6 +102,47 @@ export default function CandidatesPage() {
       setAddError("Something went wrong");
     } finally {
       setAddLoading(false);
+    }
+  }
+
+  async function handleSendRequest(candidateId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setActionLoading({ id: candidateId, type: "send" });
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}/send-request`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        setActionMsg({ id: candidateId, text: "Sent!" });
+      } else {
+        setActionMsg({ id: candidateId, text: json.error || "Failed", error: true });
+      }
+    } catch {
+      setActionMsg({ id: candidateId, text: "Failed", error: true });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setActionMsg(null), 2500);
+    }
+  }
+
+  async function handleCopyLink(candidateId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setActionLoading({ id: candidateId, type: "copy" });
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/candidates/${candidateId}/copy-link`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        await navigator.clipboard.writeText(json.data.schedulingLink);
+        setActionMsg({ id: candidateId, text: "Copied!" });
+      } else {
+        setActionMsg({ id: candidateId, text: json.error || "Failed", error: true });
+      }
+    } catch {
+      setActionMsg({ id: candidateId, text: "Failed", error: true });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setActionMsg(null), 2500);
     }
   }
 
@@ -272,24 +316,61 @@ export default function CandidatesPage() {
                           </Badge>
                         </td>
                         <td className="px-6 py-4 text-sm text-muted">
-                          {new Date(candidate.createdAt).toLocaleDateString()}
+                          {formatTimestampTz(candidate.createdAt, "MMM d, yyyy")}
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!confirm(`Delete ${candidate.name || candidate.email}? This cannot be undone.`)) return;
-                              const res = await fetch(`/api/candidates/${candidate.id}`, { method: "DELETE" });
-                              const json = await res.json();
-                              if (json.success) loadCandidates();
-                            }}
-                            className="text-muted hover:text-danger transition-colors cursor-pointer p-1 rounded hover:bg-red-50 dark:hover:bg-red-950"
-                            title="Delete candidate"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-1">
+                            {actionMsg?.id === candidate.id && (
+                              <span className={`text-xs font-medium mr-1 ${actionMsg.error ? "text-danger" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                {actionMsg.text}
+                              </span>
+                            )}
+                            {candidate.status === "ACTIVE" && (
+                              <button
+                                onClick={(e) => handleSendRequest(candidate.id, e)}
+                                disabled={actionLoading?.id === candidate.id}
+                                className="text-muted hover:text-primary transition-colors cursor-pointer p-1.5 rounded hover:bg-primary/10 disabled:opacity-50"
+                                title="Send availability request"
+                              >
+                                {actionLoading?.id === candidate.id && actionLoading.type === "send" ? (
+                                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                  </svg>
+                                )}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => handleCopyLink(candidate.id, e)}
+                              disabled={actionLoading?.id === candidate.id}
+                              className="text-muted hover:text-primary transition-colors cursor-pointer p-1.5 rounded hover:bg-primary/10 disabled:opacity-50"
+                              title="Copy scheduling link"
+                            >
+                              {actionLoading?.id === candidate.id && actionLoading.type === "copy" ? (
+                                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm(`Delete ${candidate.name || candidate.email}? This cannot be undone.`)) return;
+                                const res = await fetch(`/api/candidates/${candidate.id}`, { method: "DELETE" });
+                                const json = await res.json();
+                                if (json.success) loadCandidates();
+                              }}
+                              className="text-muted hover:text-danger transition-colors cursor-pointer p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-950"
+                              title="Delete candidate"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

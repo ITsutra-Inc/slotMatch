@@ -68,6 +68,52 @@ export async function ensureAvailabilityWindow(candidateId: string) {
 }
 
 /**
+ * Create or get an availability window for a specific 2-week period.
+ * weekStartDate should be a Monday; it will be normalized to the Monday of that week.
+ */
+export async function ensureAvailabilityWindowForPeriod(
+  candidateId: string,
+  weekStartDate: Date
+) {
+  const weekStart = startOfWeek(weekStartDate, { weekStartsOn: 1 });
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = endOfWeek(addWeeks(weekStart, 1), { weekStartsOn: 1 });
+  weekEnd.setHours(23, 59, 59, 999);
+
+  // Check if window already exists
+  const existing = await prisma.availabilityWindow.findUnique({
+    where: {
+      candidateId_weekStart: {
+        candidateId,
+        weekStart,
+      },
+    },
+  });
+
+  if (existing) return existing;
+
+  // Calculate days until window ends for token expiry
+  const now = new Date();
+  const msUntilEnd = weekEnd.getTime() - now.getTime();
+  const daysUntilEnd = Math.max(1, Math.ceil(msUntilEnd / (1000 * 60 * 60 * 24)));
+
+  const token = generateCandidateToken(candidateId, candidateId, daysUntilEnd);
+  const tokenExpiresAt = new Date(weekEnd);
+
+  const window = await prisma.availabilityWindow.create({
+    data: {
+      candidateId,
+      weekStart,
+      weekEnd,
+      token,
+      tokenExpiresAt,
+    },
+  });
+
+  return window;
+}
+
+/**
  * Expire all windows that are past their end date and still OPEN.
  */
 export async function expireOldWindows() {

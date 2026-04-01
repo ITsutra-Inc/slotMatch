@@ -5,22 +5,8 @@ import { useRouter } from "next/navigation";
 import Button from "@/components/ui/button";
 import Badge from "@/components/ui/badge";
 import Card, { CardTitle } from "@/components/ui/card";
-import { format } from "date-fns";
-
-/** Parse an ISO/date string as a local Date to avoid timezone shift.
- *  For date-only strings: pins to noon local time.
- *  For datetime strings: extracts the UTC components and treats them as local. */
-function parseLocalDate(s: string): Date {
-  if (!s.includes("T")) {
-    return new Date(s + "T12:00:00");
-  }
-  // For full ISO datetime, extract UTC parts and construct local
-  const d = new Date(s);
-  return new Date(
-    d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
-    d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()
-  );
-}
+import { format, startOfWeek, addWeeks, endOfWeek } from "date-fns";
+import { formatDateTz, formatTimestampTz, formatTz } from "@/lib/timezone";
 
 interface CandidateDetail {
   id: string;
@@ -80,6 +66,110 @@ export default function CandidateDetailPage({
   }, [id]);
 
   const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [sendingRequest, setSendingRequest] = useState(false);
+  const [sendRequestMsg, setSendRequestMsg] = useState("");
+  const [copyingLink, setCopyingLink] = useState(false);
+  const [copyLinkMsg, setCopyLinkMsg] = useState("");
+  const [windowLinkDate, setWindowLinkDate] = useState(() => {
+    const mon = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return format(mon, "yyyy-MM-dd");
+  });
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [generateLinkMsg, setGenerateLinkMsg] = useState("");
+
+  async function handleSendRequest() {
+    setSendingRequest(true);
+    setSendRequestMsg("");
+    try {
+      const res = await fetch(`/api/candidates/${id}/send-request`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        setSendRequestMsg("Request sent!");
+        // Reload to refresh notification history
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      } else {
+        setSendRequestMsg(json.error || "Failed to send");
+      }
+    } catch {
+      setSendRequestMsg("Failed to send request");
+    } finally {
+      setSendingRequest(false);
+      setTimeout(() => setSendRequestMsg(""), 3000);
+    }
+  }
+
+  async function handleCopyLink() {
+    setCopyingLink(true);
+    setCopyLinkMsg("");
+    try {
+      const res = await fetch(`/api/candidates/${id}/copy-link`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        await navigator.clipboard.writeText(json.data.schedulingLink);
+        setCopyLinkMsg("Link copied!");
+        // Reload to refresh notification history
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      } else {
+        setCopyLinkMsg(json.error || "Failed to get link");
+      }
+    } catch {
+      setCopyLinkMsg("Failed to copy link");
+    } finally {
+      setCopyingLink(false);
+      setTimeout(() => setCopyLinkMsg(""), 3000);
+    }
+  }
+
+  async function handleGenerateWindowLink() {
+    setGeneratingLink(true);
+    setGenerateLinkMsg("");
+    try {
+      const res = await fetch(`/api/candidates/${id}/generate-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart: windowLinkDate }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await navigator.clipboard.writeText(json.data.schedulingLink);
+        setGenerateLinkMsg(`Copied! (${formatTimestampTz(json.data.weekStart, "MMM d")} – ${formatTimestampTz(json.data.weekEnd, "MMM d")})`);
+        // Reload to refresh notification history + windows
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      } else {
+        setGenerateLinkMsg(json.error || "Failed");
+      }
+    } catch {
+      setGenerateLinkMsg("Failed to generate link");
+    } finally {
+      setGeneratingLink(false);
+      setTimeout(() => setGenerateLinkMsg(""), 4000);
+    }
+  }
+
+  async function handleDeleteAvailability() {
+    if (!confirm("Delete this candidate's submitted availability? Their time slots will be cleared and the window reopened.")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/candidates/${id}/clear-availability`, { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      }
+    } catch (error) {
+      console.error("Failed to delete availability:", error);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleStatusChange(status: string) {
     const res = await fetch(`/api/candidates/${id}`, {
@@ -171,41 +261,77 @@ export default function CandidateDetailPage({
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          {candidate.status === "ACTIVE" ? (
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-2">
+            {candidate.status === "ACTIVE" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleStatusChange("PAUSED")}
+              >
+                Pause
+              </Button>
+            ) : candidate.status === "PAUSED" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleStatusChange("ACTIVE")}
+              >
+                Reactivate
+              </Button>
+            ) : candidate.status === "ARCHIVED" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleStatusChange("ACTIVE")}
+              >
+                Unarchive
+              </Button>
+            ) : null}
+            {candidate.status !== "ARCHIVED" && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => handleStatusChange("ARCHIVED")}
+            >
+              Archive
+            </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {candidate.status === "ACTIVE" && (
+              <Button
+                size="sm"
+                onClick={handleSendRequest}
+                loading={sendingRequest}
+              >
+                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Send Request
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => handleStatusChange("PAUSED")}
+              onClick={handleCopyLink}
+              loading={copyingLink}
             >
-              Pause
+              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              Copy Link
             </Button>
-          ) : candidate.status === "PAUSED" ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleStatusChange("ACTIVE")}
-            >
-              Reactivate
-            </Button>
-          ) : candidate.status === "ARCHIVED" ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => handleStatusChange("ACTIVE")}
-            >
-              Unarchive
-            </Button>
-          ) : null}
-          {candidate.status !== "ARCHIVED" && (
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => handleStatusChange("ARCHIVED")}
-          >
-            Archive
-          </Button>
-          )}
+            {(sendRequestMsg || copyLinkMsg) && (
+              <span className={`text-xs font-medium ${
+                (sendRequestMsg || copyLinkMsg)?.includes("Failed") || (sendRequestMsg || copyLinkMsg)?.includes("must be") || (sendRequestMsg || copyLinkMsg)?.includes("already")
+                  ? "text-danger"
+                  : "text-emerald-600 dark:text-emerald-400"
+              }`}>
+                {sendRequestMsg || copyLinkMsg}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -242,10 +368,63 @@ export default function CandidateDetailPage({
         >
           <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Added</p>
           <p className="text-sm font-medium text-foreground">
-            {new Date(candidate.createdAt).toLocaleDateString()}
+            {formatTimestampTz(candidate.createdAt, "MMM d, yyyy")}
           </p>
         </div>
       </div>
+
+      {/* Generate window-specific link */}
+      <Card>
+        <div className="flex items-center gap-2 mb-4">
+          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <CardTitle>Generate Scheduling Link</CardTitle>
+        </div>
+        <p className="text-sm text-muted mb-4">
+          Pick a 2-week window start date and generate a scheduling link scoped to that period.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor="window-start" className="block text-xs font-medium text-muted mb-1">
+              Window start (Monday)
+            </label>
+            <input
+              id="window-start"
+              type="date"
+              value={windowLinkDate}
+              onChange={(e) => setWindowLinkDate(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
+            />
+          </div>
+          <div className="text-sm text-muted py-2">
+            {(() => {
+              const d = new Date(windowLinkDate + "T12:00:00");
+              if (isNaN(d.getTime())) return null;
+              const ws = startOfWeek(d, { weekStartsOn: 1 });
+              const we = endOfWeek(addWeeks(ws, 1), { weekStartsOn: 1 });
+              return `${formatTz(ws, "MMM d")} – ${formatTz(we, "MMM d, yyyy")}`;
+            })()}
+          </div>
+          <Button
+            size="sm"
+            onClick={handleGenerateWindowLink}
+            loading={generatingLink}
+          >
+            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            </svg>
+            Generate &amp; Copy Link
+          </Button>
+          {generateLinkMsg && (
+            <span className={`text-xs font-medium ${
+              generateLinkMsg.includes("Failed") ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
+            }`}>
+              {generateLinkMsg}
+            </span>
+          )}
+        </div>
+      </Card>
 
       {/* Current availability window */}
       <Card>
@@ -260,8 +439,8 @@ export default function CandidateDetailPage({
           <div>
             <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-border/40">
               <p className="text-sm font-medium text-foreground">
-                {format(parseLocalDate(currentWindow.weekStart), "MMM d")} –{" "}
-                {format(parseLocalDate(currentWindow.weekEnd), "MMM d, yyyy")}
+                {formatTimestampTz(currentWindow.weekStart, "MMM d")} –{" "}
+                {formatTimestampTz(currentWindow.weekEnd, "MMM d, yyyy")}
               </p>
               <Badge
                 dot
@@ -278,7 +457,7 @@ export default function CandidateDetailPage({
               {currentWindow.submittedAt && (
                 <p className="text-xs text-muted">
                   Submitted{" "}
-                  {format(new Date(currentWindow.submittedAt), "MMM d 'at' h:mm a")}
+                  {formatTimestampTz(currentWindow.submittedAt, "MMM d 'at' h:mm a")}
                 </p>
               )}
               {(currentWindow.status === "SUBMITTED" || currentWindow.status === "EXPIRED") && (
@@ -291,6 +470,16 @@ export default function CandidateDetailPage({
                   Reset &amp; Resend
                 </Button>
               )}
+              {currentWindow.timeSlots.length > 0 && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={handleDeleteAvailability}
+                  loading={deleting}
+                >
+                  Delete Availability
+                </Button>
+              )}
             </div>
 
             {currentWindow.timeSlots.length > 0 ? (
@@ -301,15 +490,15 @@ export default function CandidateDetailPage({
                     className="bg-surface dark:bg-white/[0.03] rounded-xl p-4 border border-border/60 dark:border-white/[0.06]"
                   >
                     <p className="text-sm font-semibold text-foreground mb-2.5">
-                      {format(parseLocalDate(date), "EEEE, MMM d")}
+                      {formatDateTz(date, "EEEE, MMM d")}
                     </p>
                     <div className="space-y-1.5">
                       {slots.map((slot) => (
                         <div key={slot.id} className="flex items-center gap-2">
                           <span className="w-1 h-1 rounded-full bg-primary" />
                           <p className="text-xs text-muted">
-                            {format(parseLocalDate(slot.startTime), "h:mm a")} –{" "}
-                            {format(parseLocalDate(slot.endTime), "h:mm a")}
+                            {formatTimestampTz(slot.startTime, "h:mm a")} –{" "}
+                            {formatTimestampTz(slot.endTime, "h:mm a")}
                           </p>
                         </div>
                       ))}
@@ -351,7 +540,7 @@ export default function CandidateDetailPage({
             {candidate.notificationLogs.map((log) => (
               <div key={log.id} className="px-6 py-3.5 flex items-center justify-between hover:bg-surface/30 transition-colors">
                 <div className="flex items-center gap-3">
-                  <Badge variant={log.channel === "EMAIL" ? "info" : "default"}>
+                  <Badge variant={log.channel === "EMAIL" ? "info" : log.channel === "SYSTEM" ? "warning" : "default"}>
                     {log.channel}
                   </Badge>
                   <p className="text-sm text-foreground">{log.type.replace(/_/g, " ")}</p>
@@ -370,7 +559,7 @@ export default function CandidateDetailPage({
                     {log.status}
                   </Badge>
                   <p className="text-xs text-muted">
-                    {new Date(log.createdAt).toLocaleString()}
+                    {formatTimestampTz(log.createdAt, "MMM d, yyyy h:mm a")}
                   </p>
                 </div>
               </div>

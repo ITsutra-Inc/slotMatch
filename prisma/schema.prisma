@@ -165,11 +165,13 @@ enum NotificationType {
   AVAILABILITY_REQUEST
   REMINDER
   WINDOW_OPENED
+  LINK_SHARED
 }
 
 enum NotificationChannel {
   EMAIL
   SMS
+  SYSTEM
 }
 
 enum NotificationStatus {

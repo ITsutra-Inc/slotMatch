@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Card, { CardTitle } from "@/components/ui/card";
 import Badge from "@/components/ui/badge";
+import { formatTimestampTz } from "@/lib/timezone";
 
 interface CandidateRow {
   id: string;
@@ -37,13 +38,7 @@ function formatCountdown(ms: number): { d: number; h: number; m: number; s: numb
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatTimestampTz(iso, "EEE, MMM d, h:mm a");
 }
 
 /** Get the Monday (start of week) for a given date as YYYY-MM-DD. */
