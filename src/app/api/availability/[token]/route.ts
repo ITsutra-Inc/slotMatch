@@ -8,6 +8,8 @@ import {
   format,
   eachDayOfInterval,
 } from "date-fns";
+import { fromZonedTime } from "date-fns-tz";
+import { APP_TIMEZONE } from "@/lib/timezone";
 
 // GET — fetch current window and existing slots
 export async function GET(
@@ -219,14 +221,16 @@ export async function POST(
 
   const slotData = slots.map((slot) => {
     const dateObj = parseISO(slot.date);
-    const [startH, startM] = slot.startTime.split(":").map(Number);
-    const [endH, endM] = slot.endTime.split(":").map(Number);
 
-    const startTime = new Date(dateObj);
-    startTime.setHours(startH, startM, 0, 0);
-
-    const endTime = new Date(dateObj);
-    endTime.setHours(endH, endM, 0, 0);
+    // Treat submitted times as CST — fromZonedTime converts CST wall-clock to UTC
+    const startTime = fromZonedTime(
+      `${slot.date}T${slot.startTime}:00`,
+      APP_TIMEZONE
+    );
+    const endTime = fromZonedTime(
+      `${slot.date}T${slot.endTime}:00`,
+      APP_TIMEZONE
+    );
 
     return {
       date: dateObj,
