@@ -77,6 +77,8 @@ export default function CandidateDetailPage({
   });
   const [generatingLink, setGeneratingLink] = useState(false);
   const [generateLinkMsg, setGenerateLinkMsg] = useState("");
+  const [sendingPeriodRequest, setSendingPeriodRequest] = useState(false);
+  const [sendPeriodRequestMsg, setSendPeriodRequestMsg] = useState("");
 
   async function handleSendRequest() {
     setSendingRequest(true);
@@ -150,6 +152,32 @@ export default function CandidateDetailPage({
     } finally {
       setGeneratingLink(false);
       setTimeout(() => setGenerateLinkMsg(""), 4000);
+    }
+  }
+
+  async function handleSendPeriodRequest() {
+    setSendingPeriodRequest(true);
+    setSendPeriodRequestMsg("");
+    try {
+      const res = await fetch(`/api/candidates/${id}/send-request-for-period`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart: windowLinkDate }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSendPeriodRequestMsg(`Request sent! (${formatTimestampTz(json.data.weekStart, "MMM d")} – ${formatTimestampTz(json.data.weekEnd, "MMM d")})`);
+        const reload = await fetch(`/api/candidates/${id}`);
+        const data = await reload.json();
+        if (data.success) setCandidate(data.data);
+      } else {
+        setSendPeriodRequestMsg(json.error || "Failed to send");
+      }
+    } catch {
+      setSendPeriodRequestMsg("Failed to send request");
+    } finally {
+      setSendingPeriodRequest(false);
+      setTimeout(() => setSendPeriodRequestMsg(""), 4000);
     }
   }
 
@@ -440,11 +468,29 @@ export default function CandidateDetailPage({
             </svg>
             Generate &amp; Copy Link
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleSendPeriodRequest}
+            loading={sendingPeriodRequest}
+          >
+            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Send Request
+          </Button>
           {generateLinkMsg && (
             <span className={`text-xs font-medium ${
               generateLinkMsg.includes("Failed") ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
             }`}>
               {generateLinkMsg}
+            </span>
+          )}
+          {sendPeriodRequestMsg && (
+            <span className={`text-xs font-medium ${
+              sendPeriodRequestMsg.includes("Failed") ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
+            }`}>
+              {sendPeriodRequestMsg}
             </span>
           )}
         </div>
