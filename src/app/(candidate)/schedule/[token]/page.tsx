@@ -487,7 +487,7 @@ export default function SchedulePage({
           <p className="text-muted text-sm mt-1">
             {step === "review"
               ? "Review your time slots below and confirm."
-              : "Click and drag on the calendar to mark your available times. Each week requires a minimum of 20 hours."}
+              : "Click and drag on the calendar to mark your available times. Each week requires a minimum of 20 hours. All times are in CST (Central Standard Time)."}
           </p>
         </div>
 
@@ -587,8 +587,10 @@ export default function SchedulePage({
                   gridTemplateColumns: `96px repeat(${currentWeekDays.length}, 1fr)`,
                 }}
               >
-                {/* Empty corner */}
-                <div className="p-2 bg-surface" />
+                {/* Corner — timezone label */}
+                <div className="p-2 bg-surface flex items-end justify-center">
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">CST</span>
+                </div>
 
                 {/* Day headers */}
                 {currentWeekDays.map((day) => {
@@ -773,7 +775,7 @@ export default function SchedulePage({
                 </p>
               </div>
               <p className="text-xs text-muted ml-8">
-                Review below. Once you confirm, your availability is locked.
+                Review below. All times are in CST. Once you confirm, your availability is locked.
               </p>
             </Card>
 
@@ -814,7 +816,7 @@ export default function SchedulePage({
                           >
                             <div className="w-1.5 h-1.5 bg-primary rounded-full" />
                             <span>
-                              {fmt12(slot.startTime)} – {fmt12(slot.endTime)}
+                              {fmt12(slot.startTime)} – {fmt12(slot.endTime)} CST
                             </span>
                           </div>
                         ))}

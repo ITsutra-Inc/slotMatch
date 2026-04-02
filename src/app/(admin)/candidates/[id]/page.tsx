@@ -457,6 +457,7 @@ export default function CandidateDetailPage({
         </svg>
         <h2 className="text-lg font-semibold text-foreground">Availability Windows</h2>
         <span className="text-xs text-muted">({windows.length})</span>
+        <span className="text-xs text-muted ml-1">· All times in CST</span>
       </div>
 
       {windows.length > 0 ? (
@@ -541,7 +542,7 @@ export default function CandidateDetailPage({
                               <span className="w-1 h-1 rounded-full bg-primary" />
                               <p className="text-xs text-muted">
                                 {formatTimestampTz(slot.startTime, "h:mm a")} –{" "}
-                                {formatTimestampTz(slot.endTime, "h:mm a")}
+                                {formatTimestampTz(slot.endTime, "h:mm a")} CST
                               </p>
                             </div>
                           ))}
