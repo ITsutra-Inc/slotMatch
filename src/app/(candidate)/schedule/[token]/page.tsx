@@ -44,16 +44,14 @@ interface LocalSlot {
 
 const START_HOUR = 9;
 const END_HOUR = 17;
-const BLOCK_MINUTES = 30;
+const BLOCK_MINUTES = 120;
 
-// Build 30-min blocks from 9:00 to 16:30 (each block represents its start time)
+// Build 2-hour blocks from 9:00 to 15:00 (each block represents its start time)
 const TIME_BLOCKS: string[] = [];
-for (let h = START_HOUR; h < END_HOUR; h++) {
-  for (let m = 0; m < 60; m += BLOCK_MINUTES) {
-    TIME_BLOCKS.push(
-      `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
-    );
-  }
+for (let h = START_HOUR; h < END_HOUR; h += 2) {
+  TIME_BLOCKS.push(
+    `${h.toString().padStart(2, "0")}:00`
+  );
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -81,7 +79,7 @@ function parseCellKey(key: string): { date: string; time: string } {
   return { date, time };
 }
 
-/** Add 30 minutes to a HH:MM string */
+/** Add two hours to a HH:MM string */
 function addBlock(time: string): string {
   const [h, m] = time.split(":").map(Number);
   const total = h * 60 + m + BLOCK_MINUTES;
@@ -449,12 +447,14 @@ export default function SchedulePage({
 
   // ─── Stats ────────────────────────────────────────────────────────────
 
-  const totalWeekdays = allWeekdays.length;
+  const MIN_WEEKLY_HOURS = 20;
   const daysWithSlots = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) > 0).length;
-  const daysValid = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) >= 4).length;
   const totalSelectedHours = (cells.size * BLOCK_MINUTES) / 60;
-  const allDaysComplete = daysValid === totalWeekdays && totalWeekdays > 0;
-  const missingDays = allWeekdays.filter((d) => totalHoursFromCells(cells, d.date) < 4);
+  const week1Hours = week1Days.reduce((sum, d) => sum + totalHoursFromCells(cells, d.date), 0);
+  const week2Hours = week2Days.reduce((sum, d) => sum + totalHoursFromCells(cells, d.date), 0);
+  const week1Valid = week1Hours >= MIN_WEEKLY_HOURS;
+  const week2Valid = week2Days.length === 0 || week2Hours >= MIN_WEEKLY_HOURS;
+  const allWeeksComplete = week1Valid && week2Valid && week1Days.length > 0;
 
   // ─── Main render ──────────────────────────────────────────────────────
 
@@ -487,7 +487,7 @@ export default function SchedulePage({
           <p className="text-muted text-sm mt-1">
             {step === "review"
               ? "Review your time slots below and confirm."
-              : "Click and drag on the calendar to mark your available times. All weekdays (Mon–Fri) require a minimum of 4 hours."}
+              : "Click and drag on the calendar to mark your available times. Each week requires a minimum of 20 hours."}
           </p>
         </div>
 
@@ -499,6 +499,23 @@ export default function SchedulePage({
 
         {step === "edit" && (
           <div className="space-y-4">
+            {/* Requirement info */}
+            <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl px-4 py-3">
+              <div className="flex items-start gap-2.5">
+                <svg className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                    Each week requires a minimum of 20 hours of availability
+                  </p>
+                  <p className="text-xs text-blue-600/80 dark:text-blue-400/70 mt-1">
+                    For example, selecting all 4 slots (8h) on Monday, Wednesday, and half on Friday = 20 hours
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Week tabs + actions */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex bg-surface rounded-lg p-1 w-fit">
@@ -508,6 +525,8 @@ export default function SchedulePage({
                   const first = new Date(days[0].date + "T12:00:00");
                   const last = new Date(days[days.length - 1].date + "T12:00:00");
                   const label = `${first.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${last.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+                  const weekHrs = weekIdx === 0 ? week1Hours : week2Hours;
+                  const weekOk = weekHrs >= MIN_WEEKLY_HOURS;
 
                   return (
                     <button
@@ -522,6 +541,9 @@ export default function SchedulePage({
                       Week {weekIdx + 1}
                       <span className="hidden sm:inline text-xs text-muted ml-1.5">
                         ({label})
+                      </span>
+                      <span className={`text-xs font-semibold ml-2 ${weekOk ? "text-emerald-600 dark:text-emerald-400" : "text-muted"}`}>
+                        {weekHrs}/{MIN_WEEKLY_HOURS}h
                       </span>
                     </button>
                   );
@@ -562,7 +584,7 @@ export default function SchedulePage({
               <div
                 className="grid border-b border-border"
                 style={{
-                  gridTemplateColumns: `64px repeat(${currentWeekDays.length}, 1fr)`,
+                  gridTemplateColumns: `96px repeat(${currentWeekDays.length}, 1fr)`,
                 }}
               >
                 {/* Empty corner */}
@@ -572,7 +594,6 @@ export default function SchedulePage({
                 {currentWeekDays.map((day) => {
                   const d = new Date(day.date + "T12:00:00");
                   const hours = totalHoursFromCells(cells, day.date);
-                  const valid = hours >= 4;
                   const hasSlots = hours > 0;
 
                   return (
@@ -580,24 +601,18 @@ export default function SchedulePage({
                       key={day.date}
                       className="p-2 text-center bg-surface border-l border-border"
                     >
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                         {d.toLocaleDateString("en-US", { weekday: "short" })}
                       </p>
-                      <p className="text-lg font-bold text-foreground leading-tight">
+                      <p className="text-xl font-bold text-foreground leading-tight">
                         {d.getDate()}
                       </p>
-                      <p className="text-[10px] text-muted">
+                      <p className="text-xs text-muted">
                         {d.toLocaleDateString("en-US", { month: "short" })}
                       </p>
                       {hasSlots && (
                         <div className="mt-1">
-                          <span
-                            className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                              valid
-                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
-                                : "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                            }`}
-                          >
+                          <span className="inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
                             {hours}h
                           </span>
                         </div>
@@ -608,24 +623,20 @@ export default function SchedulePage({
               </div>
 
               {/* Time rows */}
-              {TIME_BLOCKS.map((time, rowIdx) => {
-                const isHourStart = time.endsWith(":00");
-
-                return (
+              {TIME_BLOCKS.map((time, rowIdx) => (
                   <div
                     key={time}
-                    className={`grid ${isHourStart ? "border-t border-border" : "border-t border-border/40"}`}
+                    className="grid border-t border-border"
                     style={{
-                      gridTemplateColumns: `64px repeat(${currentWeekDays.length}, 1fr)`,
+                      gridTemplateColumns: `96px repeat(${currentWeekDays.length}, 1fr)`,
                     }}
                   >
-                    {/* Time label */}
-                    <div className="px-2 py-0 flex items-start justify-end pr-3 bg-surface/50">
-                      {isHourStart && (
-                        <span className="text-[11px] text-muted font-medium -mt-0.5">
-                          {fmtHour(time)}
-                        </span>
-                      )}
+                    {/* Time label — show 2-hour range */}
+                    <div className="px-2 py-0 flex items-center justify-end pr-3 bg-surface/50">
+                      <span className="text-sm text-muted font-medium leading-tight text-right">
+                        {fmtHour(time)}
+                        <span className="block text-xs text-muted/60">to {fmtHour(addBlock(time))}</span>
+                      </span>
                     </div>
 
                     {/* Cells */}
@@ -648,7 +659,7 @@ export default function SchedulePage({
                       return (
                         <div
                           key={key}
-                          className={`h-7 border-l border-border cursor-pointer transition-colors duration-75 ${bg} hover:bg-indigo-50 dark:hover:bg-indigo-900`}
+                          className={`h-16 border-l border-border cursor-pointer transition-colors duration-75 ${bg} hover:bg-indigo-50 dark:hover:bg-indigo-900`}
                           onMouseDown={(e) => {
                             e.preventDefault();
                             handlePointerDown(colIdx, rowIdx);
@@ -680,36 +691,18 @@ export default function SchedulePage({
                       );
                     })}
                   </div>
-                );
-              })}
-
-              {/* End time label */}
-              <div
-                className="grid border-t border-border"
-                style={{
-                  gridTemplateColumns: `64px repeat(${currentWeekDays.length}, 1fr)`,
-                }}
-              >
-                <div className="px-2 flex items-start justify-end pr-3 bg-surface/50">
-                  <span className="text-[11px] text-muted font-medium -mt-0.5">
-                    {fmtHour(`${END_HOUR}:00`)}
-                  </span>
-                </div>
-                {currentWeekDays.map((day) => (
-                  <div key={day.date} className="h-2 border-l border-border" />
-                ))}
-              </div>
+              ))}
             </div>
 
             {/* Legend + stats */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-4 text-xs text-muted">
+              <div className="flex items-center gap-4 text-sm text-muted">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-3 rounded bg-indigo-100 dark:bg-indigo-800 border border-indigo-200 dark:border-indigo-600" />
+                  <div className="w-5 h-4 rounded bg-indigo-100 dark:bg-indigo-800 border border-indigo-200 dark:border-indigo-600" />
                   <span>Available</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-3 rounded bg-card border border-border" />
+                  <div className="w-5 h-4 rounded bg-card border border-border" />
                   <span>Unavailable</span>
                 </div>
                 <span className="text-border">|</span>
@@ -721,20 +714,18 @@ export default function SchedulePage({
                   {totalSelectedHours}h total
                 </span>
                 <span className="text-border">|</span>
-                <span
-                  className={
-                    allDaysComplete
-                      ? "text-success font-medium"
-                      : "text-muted"
-                  }
-                >
-                  {daysValid}/{totalWeekdays} days complete
+                <span className={week1Valid ? "text-success font-medium" : "text-muted"}>
+                  Wk 1: {week1Hours}/{MIN_WEEKLY_HOURS}h
+                </span>
+                <span className="text-border">|</span>
+                <span className={week2Valid ? "text-success font-medium" : "text-muted"}>
+                  Wk 2: {week2Hours}/{MIN_WEEKLY_HOURS}h
                 </span>
               </div>
             </div>
 
             {/* Completion status */}
-            {cells.size > 0 && !allDaysComplete && (
+            {cells.size > 0 && !allWeeksComplete && (
               <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl px-4 py-3">
                 <div className="flex items-start gap-2.5">
                   <svg className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -742,13 +733,12 @@ export default function SchedulePage({
                   </svg>
                   <div>
                     <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                      {missingDays.length} day{missingDays.length !== 1 ? "s" : ""} still need availability (min 4h each)
+                      {!week1Valid && !week2Valid ? "Both weeks" : !week1Valid ? "Week 1" : "Week 2"} still need{!week1Valid !== !week2Valid ? "s" : ""} more availability
                     </p>
                     <p className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-1">
-                      {missingDays.map((d) => {
-                        const dt = new Date(d.date + "T12:00:00");
-                        return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-                      }).join(", ")}
+                      {!week1Valid && `Week 1: ${week1Hours}h / ${MIN_WEEKLY_HOURS}h minimum`}
+                      {!week1Valid && !week2Valid && " · "}
+                      {!week2Valid && `Week 2: ${week2Hours}h / ${MIN_WEEKLY_HOURS}h minimum`}
                     </p>
                   </div>
                 </div>
@@ -761,7 +751,7 @@ export default function SchedulePage({
                 onClick={handleSave}
                 loading={saving}
                 size="lg"
-                disabled={!allDaysComplete}
+                disabled={!allWeeksComplete}
               >
                 Save &amp; Review
               </Button>
@@ -812,7 +802,7 @@ export default function SchedulePage({
                             day: "numeric",
                           })}
                         </p>
-                        <Badge variant={hours >= 4 ? "success" : "warning"}>
+                        <Badge variant="success">
                           {hours}h
                         </Badge>
                       </div>

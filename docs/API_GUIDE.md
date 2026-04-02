@@ -316,7 +316,7 @@ Each availability window goes through the following states:
 - Windows follow a **2-week rolling cycle** (Monday to Sunday of the following week)
 - The API always returns only the **latest submitted** window for each candidate
 - A new window is created automatically at the start of each cycle
-- Candidates must fill all weekdays (Mon–Fri) with a minimum of 4 hours per day
+- Candidates must provide a minimum of 20 hours of availability per week
 
 ---
 

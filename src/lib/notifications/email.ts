@@ -47,7 +47,7 @@ export function buildAvailabilityRequestEmail(
           Please click the button below to fill in your available time slots.
         </p>
         <p style="color: #6B7280; font-size: 14px; margin-bottom: 24px;">
-          You must provide at least 4 hours of availability per day.
+          You must provide at least 20 hours of availability per week (e.g., 5 hours on Monday–Thursday).
         </p>
         <a href="${scheduleUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">
           Submit Availability

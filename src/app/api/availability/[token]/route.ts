@@ -125,7 +125,7 @@ export async function POST(
   const weekStart = window.weekStart;
   const weekEnd = window.weekEnd;
 
-  // Group slots by date to validate 4-hour minimum
+  // Group slots by date
   const slotsByDate = new Map<string, { start: string; end: string }[]>();
 
   for (const slot of slots) {
@@ -165,29 +165,7 @@ export async function POST(
     slotsByDate.set(slot.date, existing);
   }
 
-  // Validate 4-hour minimum per day
-  for (const [date, daySlots] of slotsByDate) {
-    let totalMinutes = 0;
-    for (const s of daySlots) {
-      const startMin =
-        parseInt(s.start.split(":")[0]) * 60 + parseInt(s.start.split(":")[1]);
-      const endMin =
-        parseInt(s.end.split(":")[0]) * 60 + parseInt(s.end.split(":")[1]);
-      totalMinutes += endMin - startMin;
-    }
-
-    if (totalMinutes < 240) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Day ${date} has only ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m of availability. Minimum 4 hours required.`,
-        },
-        { status: 400 }
-      );
-    }
-  }
-
-  // Validate all weekdays in the window have slots (min 4h each)
+  // Validate 20-hour minimum per week
   const windowDays = eachDayOfInterval({
     start: window.weekStart,
     end: window.weekEnd,
@@ -196,25 +174,41 @@ export async function POST(
     return day >= 1 && day <= 5; // Mon–Fri only
   });
 
-  const missingDays = windowDays.filter((d) => {
-    const dateStr = format(d, "yyyy-MM-dd");
-    const daySlots = slotsByDate.get(dateStr);
-    if (!daySlots) return true;
-    let totalMinutes = 0;
-    for (const s of daySlots) {
-      const startMin = parseInt(s.start.split(":")[0]) * 60 + parseInt(s.start.split(":")[1]);
-      const endMin = parseInt(s.end.split(":")[0]) * 60 + parseInt(s.end.split(":")[1]);
-      totalMinutes += endMin - startMin;
-    }
-    return totalMinutes < 240;
-  });
+  const week1Dates = new Set(windowDays.slice(0, 5).map((d) => format(d, "yyyy-MM-dd")));
+  const week2Dates = new Set(windowDays.slice(5, 10).map((d) => format(d, "yyyy-MM-dd")));
 
-  if (missingDays.length > 0) {
-    const missing = missingDays.map((d) => format(d, "EEE, MMM d")).join(", ");
+  function totalMinutesForWeek(dates: Set<string>): number {
+    let total = 0;
+    for (const [date, daySlots] of slotsByDate) {
+      if (!dates.has(date)) continue;
+      for (const s of daySlots) {
+        const startMin = parseInt(s.start.split(":")[0]) * 60 + parseInt(s.start.split(":")[1]);
+        const endMin = parseInt(s.end.split(":")[0]) * 60 + parseInt(s.end.split(":")[1]);
+        total += endMin - startMin;
+      }
+    }
+    return total;
+  }
+
+  const MIN_WEEKLY_MINUTES = 1200; // 20 hours
+  const week1Minutes = totalMinutesForWeek(week1Dates);
+  const week2Minutes = totalMinutesForWeek(week2Dates);
+
+  if (week1Minutes < MIN_WEEKLY_MINUTES) {
     return NextResponse.json(
       {
         success: false,
-        error: `All weekdays require at least 4 hours of availability. Missing: ${missing}`,
+        error: `Week 1 has only ${Math.floor(week1Minutes / 60)}h ${week1Minutes % 60}m of availability. Minimum 20 hours required.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  if (week2Dates.size > 0 && week2Minutes < MIN_WEEKLY_MINUTES) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Week 2 has only ${Math.floor(week2Minutes / 60)}h ${week2Minutes % 60}m of availability. Minimum 20 hours required.`,
       },
       { status: 400 }
     );
@@ -291,7 +285,7 @@ export async function PUT(
     );
   }
 
-  // Validate all weekdays are covered
+  // Validate 20-hour minimum per week
   const submitWindowDays = eachDayOfInterval({
     start: window.weekStart,
     end: window.weekEnd,
@@ -300,21 +294,36 @@ export async function PUT(
     return day >= 1 && day <= 5;
   });
 
+  const submitWeek1Dates = new Set(submitWindowDays.slice(0, 5).map((d) => format(d, "yyyy-MM-dd")));
+  const submitWeek2Dates = new Set(submitWindowDays.slice(5, 10).map((d) => format(d, "yyyy-MM-dd")));
+
   // Use toISOString to get UTC date string — @db.Date fields are stored at
   // UTC midnight, and date-fns format() would shift them back a day in
   // negative-UTC-offset timezones.
-  const coveredDates = new Set(
-    window.timeSlots.map((s) => s.date.toISOString().split("T")[0])
-  );
+  function submitTotalMinutes(dates: Set<string>): number {
+    let total = 0;
+    for (const slot of window!.timeSlots) {
+      const dateStr = slot.date.toISOString().split("T")[0];
+      if (!dates.has(dateStr)) continue;
+      total += differenceInMinutes(slot.endTime, slot.startTime);
+    }
+    return total;
+  }
 
-  const uncoveredDays = submitWindowDays.filter(
-    (d) => !coveredDates.has(format(d, "yyyy-MM-dd"))
-  );
+  const SUBMIT_MIN_WEEKLY_MINUTES = 1200; // 20 hours
+  const submitWeek1Min = submitTotalMinutes(submitWeek1Dates);
+  const submitWeek2Min = submitTotalMinutes(submitWeek2Dates);
 
-  if (uncoveredDays.length > 0) {
-    const missing = uncoveredDays.map((d) => format(d, "EEE, MMM d")).join(", ");
+  if (submitWeek1Min < SUBMIT_MIN_WEEKLY_MINUTES) {
     return NextResponse.json(
-      { success: false, error: `All weekdays must have availability. Missing: ${missing}` },
+      { success: false, error: `Week 1 has only ${Math.floor(submitWeek1Min / 60)}h of availability. Minimum 20 hours required.` },
+      { status: 400 }
+    );
+  }
+
+  if (submitWeek2Dates.size > 0 && submitWeek2Min < SUBMIT_MIN_WEEKLY_MINUTES) {
+    return NextResponse.json(
+      { success: false, error: `Week 2 has only ${Math.floor(submitWeek2Min / 60)}h of availability. Minimum 20 hours required.` },
       { status: 400 }
     );
   }
