@@ -122,18 +122,31 @@ export async function handleWeeklyAvailabilityRequest(): Promise<number> {
       where: { status: "ACTIVE" },
     });
 
+    let sent = 0;
     for (const candidate of activeCandidates) {
       const window = await ensureAvailabilityWindow(candidate.id);
 
-      if (window.status === "OPEN") {
-        await sendAvailabilityRequest(candidate.id, window.token);
-      }
+      if (window.status !== "OPEN") continue;
+
+      // Skip if an availability request was already sent for this window
+      const alreadySent = await prisma.notificationLog.findFirst({
+        where: {
+          candidateId: candidate.id,
+          type: "AVAILABILITY_REQUEST",
+          status: "SENT",
+          createdAt: { gte: window.weekStart },
+        },
+      });
+      if (alreadySent) continue;
+
+      await sendAvailabilityRequest(candidate.id, window.token);
+      sent++;
     }
 
     console.log(
-      `[CRON] Sent availability requests to ${activeCandidates.length} candidates`
+      `[CRON] Sent availability requests to ${sent}/${activeCandidates.length} candidates`
     );
-    return activeCandidates.length;
+    return sent;
   } catch (error) {
     console.error("[CRON] Weekly availability request failed:", error);
     return 0;
@@ -152,6 +165,20 @@ export async function handleReminderCheck(): Promise<number> {
     let count = 0;
     for (const window of openWindows) {
       if (window.candidate.status !== "ACTIVE") continue;
+
+      // Skip if a reminder was already sent in the last 12 hours for this window
+      const recentReminder = await prisma.notificationLog.findFirst({
+        where: {
+          candidateId: window.candidateId,
+          type: "REMINDER",
+          status: "SENT",
+          createdAt: {
+            gte: new Date(Date.now() - 12 * 60 * 60 * 1000),
+          },
+        },
+      });
+      if (recentReminder) continue;
+
       await sendReminder(window.candidateId, window.token);
       count++;
     }
