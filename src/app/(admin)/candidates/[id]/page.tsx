@@ -33,6 +33,7 @@ interface CandidateDetail {
     type: string;
     channel: string;
     status: string;
+    note: string | null;
     sentAt: string | null;
     createdAt: string;
   }>;
@@ -481,14 +482,14 @@ export default function CandidateDetailPage({
           </Button>
           {generateLinkMsg && (
             <span className={`text-xs font-medium ${
-              generateLinkMsg.includes("Failed") ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
+              generateLinkMsg.startsWith("Copied!") ? "text-emerald-600 dark:text-emerald-400" : "text-danger"
             }`}>
               {generateLinkMsg}
             </span>
           )}
           {sendPeriodRequestMsg && (
             <span className={`text-xs font-medium ${
-              sendPeriodRequestMsg.includes("Failed") ? "text-danger" : "text-emerald-600 dark:text-emerald-400"
+              sendPeriodRequestMsg.startsWith("Request sent!") ? "text-emerald-600 dark:text-emerald-400" : "text-danger"
             }`}>
               {sendPeriodRequestMsg}
             </span>
@@ -637,7 +638,10 @@ export default function CandidateDetailPage({
                   <Badge variant={log.channel === "EMAIL" ? "info" : log.channel === "SYSTEM" ? "warning" : "default"}>
                     {log.channel}
                   </Badge>
-                  <p className="text-sm text-foreground">{log.type.replace(/_/g, " ")}</p>
+                  <p className="text-sm text-foreground">
+                    {log.type.replace(/_/g, " ")}
+                    {log.note && <span className="text-xs text-muted ml-2">({log.note})</span>}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge

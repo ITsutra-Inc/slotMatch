@@ -149,6 +149,7 @@ model NotificationLog {
   channel        NotificationChannel
   status         NotificationStatus  @default(PENDING)
   errorMessage   String?             @map("error_message")
+  note           String?
   sentAt         DateTime?           @map("sent_at")
   createdAt      DateTime            @default(now()) @map("created_at")
 

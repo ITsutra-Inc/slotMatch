@@ -34,26 +34,42 @@ export async function sendEmail({ to, subject, html }: EmailParams): Promise<boo
 
 export function buildAvailabilityRequestEmail(
   candidateName: string | null,
-  scheduleUrl: string
+  scheduleUrl: string,
+  windowDates?: string
 ): { subject: string; html: string } {
   const name = candidateName || "there";
+  const windowInfo = windowDates
+    ? `<p style="color: #111827; font-weight: 600; font-size: 15px; margin-bottom: 16px;">
+        📅 Availability window: ${windowDates}
+      </p>`
+    : "";
   return {
-    subject: "Action Required: Please submit your availability for interviews",
+    subject: "ITsutra – Action Required: Please submit your availability",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+        <div style="margin-bottom: 24px;">
+          <h1 style="color: #4F46E5; font-size: 20px; margin: 0;">ITsutra</h1>
+        </div>
         <h2 style="color: #111827; margin-bottom: 16px;">Hi ${name},</h2>
         <p style="color: #374151; line-height: 1.6;">
-          We need your availability for the upcoming two weeks for interview scheduling.
-          Please click the button below to fill in your available time slots.
+          We need you to submit your availability for interview scheduling.
+          Please use the link below to select the time slots when you are available.
         </p>
-        <p style="color: #6B7280; font-size: 14px; margin-bottom: 24px;">
-          You must provide at least 20 hours of availability per week (e.g., 5 hours on Monday–Thursday).
+        ${windowInfo}
+        <p style="color: #374151; font-size: 14px; line-height: 1.6; margin-bottom: 8px;">
+          <strong>How to fill it out:</strong>
         </p>
+        <ol style="color: #374151; font-size: 14px; line-height: 1.8; margin-bottom: 24px; padding-left: 20px;">
+          <li>Click the button below to open the scheduling calendar.</li>
+          <li>Select the 2-hour time blocks when you are available (in CST).</li>
+          <li>You must provide at least <strong>20 hours per week</strong>.</li>
+          <li>Review your selections and hit Submit.</li>
+        </ol>
         <a href="${scheduleUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">
           Submit Availability
         </a>
         <p style="color: #9CA3AF; font-size: 12px; margin-top: 32px;">
-          This link will expire at the end of the current 2-week window.
+          This link will expire in 14 days. If you have any questions, please reach out to your ITsutra contact.
         </p>
       </div>
     `,

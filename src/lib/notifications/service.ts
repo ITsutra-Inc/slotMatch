@@ -14,7 +14,8 @@ function getScheduleUrl(token: string): string {
 
 export async function sendAvailabilityRequest(
   candidateId: string,
-  windowToken: string
+  windowToken: string,
+  note?: string
 ) {
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -23,10 +24,12 @@ export async function sendAvailabilityRequest(
 
   const scheduleUrl = getScheduleUrl(windowToken);
 
-  // Send email
+  // Send email — pass window dates from note (format: "Window: Apr 6 – Apr 19, 2026")
+  const windowDates = note?.replace(/^Window:\s*/, "");
   const emailContent = buildAvailabilityRequestEmail(
     candidate.name,
-    scheduleUrl
+    scheduleUrl,
+    windowDates
   );
   const emailSuccess = await sendEmail({
     to: candidate.email,
@@ -39,6 +42,7 @@ export async function sendAvailabilityRequest(
       channel: "EMAIL",
       status: emailSuccess ? "SENT" : "FAILED",
       sentAt: emailSuccess ? new Date() : undefined,
+      note,
       candidateId,
     },
   });
@@ -54,6 +58,7 @@ export async function sendAvailabilityRequest(
         channel: "SMS",
         status: smsSuccess ? "SENT" : "FAILED",
         sentAt: smsSuccess ? new Date() : undefined,
+        note,
         candidateId,
       },
     });
@@ -62,7 +67,8 @@ export async function sendAvailabilityRequest(
 
 export async function sendReminder(
   candidateId: string,
-  windowToken: string
+  windowToken: string,
+  note?: string
 ) {
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -84,6 +90,7 @@ export async function sendReminder(
       channel: "EMAIL",
       status: emailSuccess ? "SENT" : "FAILED",
       sentAt: emailSuccess ? new Date() : undefined,
+      note,
       candidateId,
     },
   });
@@ -99,6 +106,7 @@ export async function sendReminder(
         channel: "SMS",
         status: smsSuccess ? "SENT" : "FAILED",
         sentAt: smsSuccess ? new Date() : undefined,
+        note,
         candidateId,
       },
     });

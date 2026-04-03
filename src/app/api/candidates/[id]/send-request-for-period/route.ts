@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedAdmin } from "@/lib/auth";
 import { ensureAvailabilityWindowForPeriod } from "@/lib/windows";
 import { sendAvailabilityRequest } from "@/lib/notifications/service";
+import { format, startOfWeek } from "date-fns";
 
 export async function POST(
   request: NextRequest,
@@ -53,16 +54,31 @@ export async function POST(
     );
   }
 
-  const window = await ensureAvailabilityWindowForPeriod(candidate.id, weekStartDate);
+  // Check if a window already exists for this period
+  const normalizedStart = startOfWeek(weekStartDate, { weekStartsOn: 1 });
+  normalizedStart.setHours(0, 0, 0, 0);
+  const existing = await prisma.availabilityWindow.findUnique({
+    where: {
+      candidateId_weekStart: {
+        candidateId: candidate.id,
+        weekStart: normalizedStart,
+      },
+    },
+  });
 
-  if (window.status === "SUBMITTED") {
+  if (existing) {
+    const ws = format(existing.weekStart, "MMM d");
+    const we = format(existing.weekEnd, "MMM d, yyyy");
     return NextResponse.json(
-      { success: false, error: "Candidate has already submitted availability for this window" },
+      { success: false, error: `A request already exists for the window ${ws} – ${we}` },
       { status: 400 }
     );
   }
 
-  await sendAvailabilityRequest(candidate.id, window.token);
+  const window = await ensureAvailabilityWindowForPeriod(candidate.id, weekStartDate);
+
+  const note = `Window: ${format(window.weekStart, "MMM d")} – ${format(window.weekEnd, "MMM d, yyyy")}`;
+  await sendAvailabilityRequest(candidate.id, window.token, note);
 
   return NextResponse.json({
     success: true,

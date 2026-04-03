@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedAdmin } from "@/lib/auth";
 import { ensureAvailabilityWindow } from "@/lib/windows";
 import { sendAvailabilityRequest } from "@/lib/notifications/service";
+import { format } from "date-fns";
 
 export async function POST(
   request: NextRequest,
@@ -47,7 +48,8 @@ export async function POST(
   }
 
   // Send the availability request (email + SMS)
-  await sendAvailabilityRequest(candidate.id, window.token);
+  const note = `Window: ${format(window.weekStart, "MMM d")} – ${format(window.weekEnd, "MMM d, yyyy")}`;
+  await sendAvailabilityRequest(candidate.id, window.token, note);
 
   return NextResponse.json({
     success: true,

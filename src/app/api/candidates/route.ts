@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedAdmin } from "@/lib/auth";
 import { createCandidateSchema } from "@/lib/validations";
-import { ensureAvailabilityWindow } from "@/lib/windows";
 
 export async function GET(request: NextRequest) {
   const admin = await getAuthenticatedAdmin();
@@ -103,9 +102,6 @@ export async function POST(request: NextRequest) {
         adminId: admin.id,
       },
     });
-
-    // Create availability window (admin will send request manually)
-    await ensureAvailabilityWindow(candidate.id);
 
     return NextResponse.json(
       { success: true, data: candidate },
