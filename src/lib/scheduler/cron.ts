@@ -152,9 +152,11 @@ export async function handleWeeklyAvailabilityRequest(): Promise<number> {
         nextStart.setHours(0, 0, 0, 0);
       }
 
-      // Only create if the next window's start date has arrived
-      if (nextStart > now) {
-        console.log(`[CRON] Skipping ${candidate.email} — next window starts ${nextStart.toISOString()}, not yet`);
+      // Allow 1-day grace period: create if next window starts within 1 day
+      const msUntilStart = nextStart.getTime() - now.getTime();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (msUntilStart > oneDayMs) {
+        console.log(`[CRON] Skipping ${candidate.email} — next window starts ${nextStart.toISOString()}, more than 1 day away`);
         continue;
       }
 

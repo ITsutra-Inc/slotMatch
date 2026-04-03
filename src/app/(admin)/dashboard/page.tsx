@@ -93,15 +93,16 @@ function getCandidateNextEvent(
   if (window?.status === "SUBMITTED") {
     const windowEnd = new Date(window.weekEnd);
 
-    // Window still active — cron will skip this candidate
+    // Window still active — find the first cron fire that will create the next window
     if (windowEnd > now) {
-      // But show when the next request will go out after this window ends
       if (schedule.nextRequest) {
-        // Find the first cron fire date AFTER the window ends
-        // The cron fires weekly, so step through fire dates
+        // Next window starts the Monday after this window ends
+        // Cron has a 1-day grace period: it will fire if nextStart is within 1 day
+        // So the cron fire date just needs to be within 1 day before nextWindowStart
         const cronFire = new Date(schedule.nextRequest);
-        // Step forward by 7 days until we find one after window ends
-        while (cronFire <= windowEnd) {
+        // Step forward by 7 days until the cron fire is within 1 day of window end
+        // (i.e., nextWindowStart - cronFireDate <= 1 day)
+        while (cronFire.getTime() < windowEnd.getTime() - 24 * 60 * 60 * 1000) {
           cronFire.setDate(cronFire.getDate() + 7);
         }
         return {
