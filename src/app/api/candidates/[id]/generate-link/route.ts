@@ -48,23 +48,25 @@ export async function POST(
     );
   }
 
-  // Check if a window already exists for this period
+  // Check if any existing window overlaps with this 2-week period
   const normalizedStart = startOfWeek(weekStartDate, { weekStartsOn: 1 });
   normalizedStart.setHours(0, 0, 0, 0);
-  const existing = await prisma.availabilityWindow.findUnique({
+  const newEnd = endOfWeek(addWeeks(normalizedStart, 1), { weekStartsOn: 1 });
+  newEnd.setHours(23, 59, 59, 999);
+
+  const overlapping = await prisma.availabilityWindow.findFirst({
     where: {
-      candidateId_weekStart: {
-        candidateId: candidate.id,
-        weekStart: normalizedStart,
-      },
+      candidateId: candidate.id,
+      weekStart: { lt: newEnd },
+      weekEnd: { gt: normalizedStart },
     },
   });
 
-  if (existing) {
-    const ws = format(existing.weekStart, "MMM d");
-    const we = format(existing.weekEnd, "MMM d, yyyy");
+  if (overlapping) {
+    const ws = format(overlapping.weekStart, "MMM d");
+    const we = format(overlapping.weekEnd, "MMM d, yyyy");
     return NextResponse.json(
-      { success: false, error: `A request already exists for the window ${ws} – ${we}` },
+      { success: false, error: `This period overlaps with an existing window (${ws} – ${we})` },
       { status: 400 }
     );
   }
