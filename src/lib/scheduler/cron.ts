@@ -4,7 +4,8 @@ import {
   sendAvailabilityRequest,
   sendReminder,
 } from "../notifications/service";
-import { ensureAvailabilityWindow, expireOldWindows } from "../windows";
+import { getCurrentWindowBounds, ensureAvailabilityWindow, expireOldWindows } from "../windows";
+import { format } from "date-fns";
 
 let availabilityTask: ScheduledTask | null = null;
 let reminderTask: ScheduledTask | null = null;
@@ -118,28 +119,45 @@ export async function handleWeeklyAvailabilityRequest(): Promise<number> {
   try {
     await expireOldWindows();
 
+    const { weekStart, weekEnd } = getCurrentWindowBounds();
+
     const activeCandidates = await prisma.candidate.findMany({
       where: { status: "ACTIVE" },
     });
 
     let sent = 0;
     for (const candidate of activeCandidates) {
-      const window = await ensureAvailabilityWindow(candidate.id);
+      // Skip if any window (OPEN, SUBMITTED, etc.) already overlaps the current period
+      const overlapping = await prisma.availabilityWindow.findFirst({
+        where: {
+          candidateId: candidate.id,
+          weekStart: { lt: weekEnd },
+          weekEnd: { gt: weekStart },
+        },
+      });
+      if (overlapping) {
+        console.log(`[CRON] Skipping ${candidate.email} — existing window ${overlapping.weekStart.toISOString()} overlaps`);
+        continue;
+      }
 
-      if (window.status !== "OPEN") continue;
-
-      // Skip if an availability request was already sent for this window
+      // Skip if an availability request was already sent for this period
       const alreadySent = await prisma.notificationLog.findFirst({
         where: {
           candidateId: candidate.id,
           type: "AVAILABILITY_REQUEST",
           status: "SENT",
-          createdAt: { gte: window.weekStart },
+          createdAt: { gte: weekStart },
         },
       });
       if (alreadySent) continue;
 
-      await sendAvailabilityRequest(candidate.id, window.token);
+      // No overlapping window exists — create one and send request
+      const window = await ensureAvailabilityWindow(candidate.id);
+
+      if (window.status !== "OPEN") continue;
+
+      const note = `Window: ${format(window.weekStart, "MMM d")} – ${format(window.weekEnd, "MMM d, yyyy")}`;
+      await sendAvailabilityRequest(candidate.id, window.token, note);
       sent++;
     }
 
@@ -155,8 +173,14 @@ export async function handleWeeklyAvailabilityRequest(): Promise<number> {
 
 export async function handleReminderCheck(): Promise<number> {
   try {
+    const now = new Date();
+
+    // Only remind for OPEN windows that have already started
     const openWindows = await prisma.availabilityWindow.findMany({
-      where: { status: "OPEN" },
+      where: {
+        status: "OPEN",
+        weekStart: { lte: now },
+      },
       include: {
         candidate: true,
       },
