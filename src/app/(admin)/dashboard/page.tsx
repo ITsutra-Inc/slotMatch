@@ -5,6 +5,7 @@ import Link from "next/link";
 import Card, { CardTitle } from "@/components/ui/card";
 import Badge from "@/components/ui/badge";
 import { formatTimestampTz } from "@/lib/timezone";
+import { startOfWeek, endOfWeek, addWeeks, addDays, format } from "date-fns";
 
 interface CandidateRow {
   id: string;
@@ -93,22 +94,22 @@ function getCandidateNextEvent(
   if (window?.status === "SUBMITTED") {
     const windowEnd = new Date(window.weekEnd);
 
+    // Compute next window dates: Monday after current window ends → +2 weeks
+    const nextWinStart = startOfWeek(addDays(windowEnd, 1), { weekStartsOn: 1 });
+    const nextWinEnd = endOfWeek(addWeeks(nextWinStart, 1), { weekStartsOn: 1 });
+    const nextWinLabel = `${format(nextWinStart, "MMM d")} – ${format(nextWinEnd, "MMM d, yyyy")}`;
+
     // Window still active — find the first cron fire that will create the next window
     if (windowEnd > now) {
       if (schedule.nextRequest) {
-        // Next window starts the Monday after this window ends
-        // Cron has a 1-day grace period: it will fire if nextStart is within 1 day
-        // So the cron fire date just needs to be within 1 day before nextWindowStart
         const cronFire = new Date(schedule.nextRequest);
-        // Step forward by 7 days until the cron fire is within 1 day of window end
-        // (i.e., nextWindowStart - cronFireDate <= 1 day)
         while (cronFire.getTime() < windowEnd.getTime() - 24 * 60 * 60 * 1000) {
           cronFire.setDate(cronFire.getDate() + 7);
         }
         return {
           type: "submitted",
           iso: cronFire.toISOString(),
-          description: `Submitted — next request after window ends`,
+          description: `Next window: ${nextWinLabel}`,
         };
       }
       return {
@@ -123,7 +124,7 @@ function getCandidateNextEvent(
       return {
         type: "request",
         iso: schedule.nextRequest,
-        description: "Window ended — new request scheduled",
+        description: `Window ended — next: ${nextWinLabel}`,
       };
     }
   }
