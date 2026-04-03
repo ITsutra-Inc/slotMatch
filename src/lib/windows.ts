@@ -50,9 +50,9 @@ export async function ensureAvailabilityWindow(candidateId: string) {
 
   if (existing) return existing;
 
-  // Create new window with token
+  // Create new window with token — 14 days from now regardless of window dates
   const token = generateCandidateToken(candidateId, candidateId, 14);
-  const tokenExpiresAt = new Date(weekEnd);
+  const tokenExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
   const window = await prisma.availabilityWindow.create({
     data: {
@@ -92,13 +92,9 @@ export async function ensureAvailabilityWindowForPeriod(
 
   if (existing) return existing;
 
-  // Calculate days until window ends for token expiry
-  const now = new Date();
-  const msUntilEnd = weekEnd.getTime() - now.getTime();
-  const daysUntilEnd = Math.max(1, Math.ceil(msUntilEnd / (1000 * 60 * 60 * 24)));
-
-  const token = generateCandidateToken(candidateId, candidateId, daysUntilEnd);
-  const tokenExpiresAt = new Date(weekEnd);
+  // Token valid for 14 days from now regardless of window dates
+  const token = generateCandidateToken(candidateId, candidateId, 14);
+  const tokenExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
   const window = await prisma.availabilityWindow.create({
     data: {
