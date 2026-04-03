@@ -68,10 +68,6 @@ export default function CandidateDetailPage({
 
   const [actionWindowId, setActionWindowId] = useState<string | null>(null);
   const [actionType, setActionType] = useState<"reset" | "delete" | "deleteWindow" | null>(null);
-  const [sendingRequest, setSendingRequest] = useState(false);
-  const [sendRequestMsg, setSendRequestMsg] = useState("");
-  const [copyingLink, setCopyingLink] = useState(false);
-  const [copyLinkMsg, setCopyLinkMsg] = useState("");
   const [windowLinkDate, setWindowLinkDate] = useState(() => {
     const mon = startOfWeek(new Date(), { weekStartsOn: 1 });
     return format(mon, "yyyy-MM-dd");
@@ -80,53 +76,6 @@ export default function CandidateDetailPage({
   const [generateLinkMsg, setGenerateLinkMsg] = useState("");
   const [sendingPeriodRequest, setSendingPeriodRequest] = useState(false);
   const [sendPeriodRequestMsg, setSendPeriodRequestMsg] = useState("");
-
-  async function handleSendRequest() {
-    setSendingRequest(true);
-    setSendRequestMsg("");
-    try {
-      const res = await fetch(`/api/candidates/${id}/send-request`, { method: "POST" });
-      const json = await res.json();
-      if (json.success) {
-        setSendRequestMsg("Request sent!");
-        // Reload to refresh notification history
-        const reload = await fetch(`/api/candidates/${id}`);
-        const data = await reload.json();
-        if (data.success) setCandidate(data.data);
-      } else {
-        setSendRequestMsg(json.error || "Failed to send");
-      }
-    } catch {
-      setSendRequestMsg("Failed to send request");
-    } finally {
-      setSendingRequest(false);
-      setTimeout(() => setSendRequestMsg(""), 3000);
-    }
-  }
-
-  async function handleCopyLink() {
-    setCopyingLink(true);
-    setCopyLinkMsg("");
-    try {
-      const res = await fetch(`/api/candidates/${id}/copy-link`, { method: "POST" });
-      const json = await res.json();
-      if (json.success) {
-        await navigator.clipboard.writeText(json.data.schedulingLink);
-        setCopyLinkMsg("Link copied!");
-        // Reload to refresh notification history
-        const reload = await fetch(`/api/candidates/${id}`);
-        const data = await reload.json();
-        if (data.success) setCandidate(data.data);
-      } else {
-        setCopyLinkMsg(json.error || "Failed to get link");
-      }
-    } catch {
-      setCopyLinkMsg("Failed to copy link");
-    } finally {
-      setCopyingLink(false);
-      setTimeout(() => setCopyLinkMsg(""), 3000);
-    }
-  }
 
   async function handleGenerateWindowLink() {
     setGeneratingLink(true);
@@ -349,40 +298,6 @@ export default function CandidateDetailPage({
             >
               Archive
             </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {candidate.status === "ACTIVE" && (
-              <Button
-                size="sm"
-                onClick={handleSendRequest}
-                loading={sendingRequest}
-              >
-                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Send Request
-              </Button>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleCopyLink}
-              loading={copyingLink}
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-              Copy Link
-            </Button>
-            {(sendRequestMsg || copyLinkMsg) && (
-              <span className={`text-xs font-medium ${
-                (sendRequestMsg || copyLinkMsg)?.includes("Failed") || (sendRequestMsg || copyLinkMsg)?.includes("must be") || (sendRequestMsg || copyLinkMsg)?.includes("already")
-                  ? "text-danger"
-                  : "text-emerald-600 dark:text-emerald-400"
-              }`}>
-                {sendRequestMsg || copyLinkMsg}
-              </span>
             )}
           </div>
         </div>
