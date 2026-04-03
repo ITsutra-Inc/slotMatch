@@ -71,8 +71,18 @@ function getCandidateNextEvent(
   }
 
   const window = candidate.availabilityWindows?.[0];
+  const now = new Date();
 
   if (window?.status === "OPEN") {
+    // If the window hasn't started yet, no reminders will be sent
+    const windowStart = new Date(window.weekStart);
+    if (windowStart > now) {
+      return {
+        type: "inactive",
+        iso: null,
+        description: `Window opens ${formatTimestampTz(window.weekStart, "MMM d")} — no reminders until then`,
+      };
+    }
     return {
       type: "reminder",
       iso: schedule.nextReminder,
@@ -80,26 +90,26 @@ function getCandidateNextEvent(
     };
   }
 
-  if (window?.status === "SUBMITTED" && schedule.nextRequest) {
-    const fireDate = new Date(schedule.nextRequest);
-    const fireMonday = getLocalMonday(fireDate);
-    const windowWeekStart = window.weekStart.split("T")[0];
-
-    if (fireMonday === windowWeekStart) {
-      const nextFire = new Date(fireDate);
-      nextFire.setDate(nextFire.getDate() + 7);
+  if (window?.status === "SUBMITTED") {
+    // Check if any existing window overlaps the next cron period
+    // The cron will skip this candidate if an overlap exists
+    const windowEnd = new Date(window.weekEnd);
+    if (windowEnd > now) {
       return {
-        type: "request",
-        iso: nextFire.toISOString(),
-        description: "Submitted — next request after current window ends",
+        type: "submitted",
+        iso: null,
+        description: "All caught up — availability submitted",
       };
     }
 
-    return {
-      type: "request",
-      iso: schedule.nextRequest,
-      description: "Submitted — new window request scheduled",
-    };
+    // Window has ended, next cron will create a new one
+    if (schedule.nextRequest) {
+      return {
+        type: "request",
+        iso: schedule.nextRequest,
+        description: "Submitted — new window request scheduled",
+      };
+    }
   }
 
   // EXPIRED or no window
@@ -323,7 +333,9 @@ export default function DashboardPage() {
                 ? "bg-amber-500/[0.06] border-amber-500/20"
                 : event?.type === "request"
                   ? "bg-primary/[0.06] border-primary/20"
-                  : "bg-surface/50 border-border/60";
+                  : event?.type === "submitted"
+                    ? "bg-emerald-500/[0.06] border-emerald-500/20"
+                    : "bg-surface/50 border-border/60";
 
             const dotColor =
               event?.type === "reminder"
@@ -387,10 +399,16 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2.5">
-                      <svg className="w-4 h-4 text-muted/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728A9 9 0 015.636 5.636" />
-                      </svg>
-                      <p className="text-xs text-muted/80">{event?.description || "No schedule data"}</p>
+                      {event?.type === "submitted" ? (
+                        <svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-muted/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728A9 9 0 015.636 5.636" />
+                        </svg>
+                      )}
+                      <p className={`text-xs ${event?.type === "submitted" ? "text-emerald-600 dark:text-emerald-400" : "text-muted/80"}`}>{event?.description || "No schedule data"}</p>
                     </div>
                   )}
                 </div>
