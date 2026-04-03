@@ -4,8 +4,8 @@ import {
   sendAvailabilityRequest,
   sendReminder,
 } from "../notifications/service";
-import { getCurrentWindowBounds, ensureAvailabilityWindow, expireOldWindows } from "../windows";
-import { format } from "date-fns";
+import { getCurrentWindowBounds, ensureAvailabilityWindowForPeriod, expireOldWindows } from "../windows";
+import { format, startOfWeek, endOfWeek, addWeeks, addDays } from "date-fns";
 
 let availabilityTask: ScheduledTask | null = null;
 let reminderTask: ScheduledTask | null = null;
@@ -119,41 +119,75 @@ export async function handleWeeklyAvailabilityRequest(): Promise<number> {
   try {
     await expireOldWindows();
 
-    const { weekStart, weekEnd } = getCurrentWindowBounds();
+    const now = new Date();
 
     const activeCandidates = await prisma.candidate.findMany({
       where: { status: "ACTIVE" },
+      include: {
+        availabilityWindows: {
+          orderBy: { weekStart: "desc" },
+          take: 1,
+        },
+      },
     });
 
     let sent = 0;
     for (const candidate of activeCandidates) {
-      // Skip if any window (OPEN, SUBMITTED, etc.) already overlaps the current period
-      const overlapping = await prisma.availabilityWindow.findFirst({
-        where: {
-          candidateId: candidate.id,
-          weekStart: { lt: weekEnd },
-          weekEnd: { gt: weekStart },
-        },
-      });
-      if (overlapping) {
-        console.log(`[CRON] Skipping ${candidate.email} — existing window ${overlapping.weekStart.toISOString()} overlaps`);
+      const latestWindow = candidate.availabilityWindows[0];
+
+      // If latest window is OPEN, candidate already has a pending request — skip
+      if (latestWindow?.status === "OPEN") {
+        console.log(`[CRON] Skipping ${candidate.email} — window is still OPEN`);
         continue;
       }
 
-      // Skip if an availability request was already sent for this period
+      // Determine the next window start date
+      let nextStart: Date;
+      if (!latestWindow) {
+        // No window ever created — use current week
+        nextStart = getCurrentWindowBounds().weekStart;
+      } else {
+        // Roll forward: next window starts the Monday after the latest window ended
+        nextStart = startOfWeek(addDays(latestWindow.weekEnd, 1), { weekStartsOn: 1 });
+        nextStart.setHours(0, 0, 0, 0);
+      }
+
+      // Only create if the next window's start date has arrived
+      if (nextStart > now) {
+        console.log(`[CRON] Skipping ${candidate.email} — next window starts ${nextStart.toISOString()}, not yet`);
+        continue;
+      }
+
+      // Compute next window end for overlap check
+      const nextEnd = endOfWeek(addWeeks(nextStart, 1), { weekStartsOn: 1 });
+      nextEnd.setHours(23, 59, 59, 999);
+
+      // Check no overlapping window exists
+      const overlapping = await prisma.availabilityWindow.findFirst({
+        where: {
+          candidateId: candidate.id,
+          weekStart: { lt: nextEnd },
+          weekEnd: { gt: nextStart },
+        },
+      });
+      if (overlapping) {
+        console.log(`[CRON] Skipping ${candidate.email} — overlapping window exists`);
+        continue;
+      }
+
+      // Skip if request already sent for this period
       const alreadySent = await prisma.notificationLog.findFirst({
         where: {
           candidateId: candidate.id,
           type: "AVAILABILITY_REQUEST",
           status: "SENT",
-          createdAt: { gte: weekStart },
+          createdAt: { gte: nextStart },
         },
       });
       if (alreadySent) continue;
 
-      // No overlapping window exists — create one and send request
-      const window = await ensureAvailabilityWindow(candidate.id);
-
+      // Create the next window and send request
+      const window = await ensureAvailabilityWindowForPeriod(candidate.id, nextStart);
       if (window.status !== "OPEN") continue;
 
       const note = `Window: ${format(window.weekStart, "MMM d")} – ${format(window.weekEnd, "MMM d, yyyy")}`;

@@ -91,10 +91,25 @@ function getCandidateNextEvent(
   }
 
   if (window?.status === "SUBMITTED") {
-    // Check if any existing window overlaps the next cron period
-    // The cron will skip this candidate if an overlap exists
     const windowEnd = new Date(window.weekEnd);
+
+    // Window still active — cron will skip this candidate
     if (windowEnd > now) {
+      // But show when the next request will go out after this window ends
+      if (schedule.nextRequest) {
+        // Find the first cron fire date AFTER the window ends
+        // The cron fires weekly, so step through fire dates
+        const cronFire = new Date(schedule.nextRequest);
+        // Step forward by 7 days until we find one after window ends
+        while (cronFire <= windowEnd) {
+          cronFire.setDate(cronFire.getDate() + 7);
+        }
+        return {
+          type: "submitted",
+          iso: cronFire.toISOString(),
+          description: `Submitted — next request after window ends`,
+        };
+      }
       return {
         type: "submitted",
         iso: null,
@@ -107,7 +122,7 @@ function getCandidateNextEvent(
       return {
         type: "request",
         iso: schedule.nextRequest,
-        description: "Submitted — new window request scheduled",
+        description: "Window ended — new request scheduled",
       };
     }
   }
@@ -116,7 +131,7 @@ function getCandidateNextEvent(
   return {
     type: "request",
     iso: schedule.nextRequest,
-    description: "No active window — availability request scheduled",
+    description: "No active window — request scheduled",
   };
 }
 
@@ -319,30 +334,37 @@ export default function DashboardPage() {
             const time = formatCountdown(countdown);
             const window = candidate.availabilityWindows?.[0];
 
-            const isActive = event?.type === "reminder" || event?.type === "request";
+            const isActive = event?.type === "reminder" || event?.type === "request" || (event?.type === "submitted" && !!event?.iso);
+
+            const hasCountdown = !!event?.iso;
+            const effectiveType = event?.type === "submitted" && hasCountdown ? "request" : event?.type;
 
             const timerColor =
-              event?.type === "reminder"
+              effectiveType === "reminder"
                 ? "text-amber-500 dark:text-amber-400"
-                : event?.type === "request"
+                : effectiveType === "request"
                   ? "text-primary"
-                  : "text-muted";
+                  : effectiveType === "submitted"
+                    ? "text-emerald-500 dark:text-emerald-400"
+                    : "text-muted";
 
             const timerBg =
-              event?.type === "reminder"
+              effectiveType === "reminder"
                 ? "bg-amber-500/[0.06] border-amber-500/20"
-                : event?.type === "request"
+                : effectiveType === "request"
                   ? "bg-primary/[0.06] border-primary/20"
-                  : event?.type === "submitted"
+                  : effectiveType === "submitted"
                     ? "bg-emerald-500/[0.06] border-emerald-500/20"
                     : "bg-surface/50 border-border/60";
 
             const dotColor =
-              event?.type === "reminder"
+              effectiveType === "reminder"
                 ? "bg-amber-400"
-                : event?.type === "request"
+                : effectiveType === "request"
                   ? "bg-primary"
-                  : "";
+                  : effectiveType === "submitted"
+                    ? "bg-emerald-400"
+                    : "";
 
             return (
               <Card key={candidate.id} hover className="relative flex flex-col">
